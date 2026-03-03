@@ -1,0 +1,71 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text.Json;
+using System.Threading.Tasks;
+
+public class CancelBuyCommand : ISingleTurnCommand, IDslCommandGrammar
+{
+    public string Name => "cancel_buy";
+    public DslCommandSyntax GetDslSyntax() => new(
+        DslArgKind.Identifier,
+        ArgRequired: true);
+
+    public bool IsAvailable(GameState state)
+    {
+        return state.Docked &&
+               state.Shared.OwnBuyOrders != null &&
+               state.Shared.OwnBuyOrders.Any(o => !string.IsNullOrWhiteSpace(o.OrderId));
+    }
+
+    public string BuildHelp(GameState state)
+        => "- cancel_buy <itemId> → cancel your open buy orders for an item";
+
+    public async Task<CommandExecutionResult?> ExecuteAsync(
+        SpaceMoltHttpClient client,
+        CommandResult cmd,
+        GameState state)
+    {
+        if (!state.Docked || string.IsNullOrWhiteSpace(cmd.Arg1))
+            return new CommandExecutionResult { ResultMessage = "Usage: cancel_buy <itemId>." };
+
+        var targetItem = cmd.Arg1.Trim();
+        var orders = state.Shared.OwnBuyOrders
+            .Where(o =>
+                !string.IsNullOrWhiteSpace(o.OrderId) &&
+                string.Equals(o.ItemId, targetItem, StringComparison.Ordinal))
+            .ToList();
+
+        if (orders.Count == 0)
+        {
+            return new CommandExecutionResult
+            {
+                ResultMessage = $"No open buy orders for {targetItem}."
+            };
+        }
+
+        int canceled = 0;
+        var errors = new List<string>();
+        foreach (var order in orders)
+        {
+            JsonElement response = await client.ExecuteAsync(
+                "cancel_order",
+                new { order_id = order.OrderId });
+
+            if (CommandJson.TryGetError(response, out _, out var errorMessage))
+            {
+                if (!string.IsNullOrWhiteSpace(errorMessage))
+                    errors.Add(errorMessage!);
+                continue;
+            }
+
+            canceled++;
+        }
+
+        var message = $"Canceled {canceled}/{orders.Count} buy order(s) for {targetItem}.";
+        if (errors.Count > 0)
+            message += $" Errors: {string.Join(" | ", errors.Distinct(StringComparer.Ordinal))}";
+
+        return new CommandExecutionResult { ResultMessage = message };
+    }
+}

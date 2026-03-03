@@ -1,0 +1,98 @@
+using System.Text.Json;
+
+public static class SpaceMoltHttpLogging
+{
+    public static async Task LogBadRequestAsync(string command, object? payload, string rawResponse)
+    {
+        string payloadText;
+
+        try
+        {
+            payloadText = payload == null ? "(null)" : JsonSerializer.Serialize(payload);
+        }
+        catch (Exception ex)
+        {
+            payloadText = $"(payload serialization failed: {ex.Message})";
+        }
+
+        var entry =
+            $"[{DateTime.UtcNow:O}] HTTP 400 BadRequest\n" +
+            $"Command: {command}\n" +
+            $"Payload: {payloadText}\n" +
+            $"Response: {rawResponse}\n\n";
+
+        await File.AppendAllTextAsync(AppPaths.HttpBadRequestLogFile, entry);
+    }
+
+    public static async Task LogPathfindAsync(string targetSystem, JsonElement routeResult)
+    {
+        var entry =
+            $"[{DateTime.UtcNow:O}] PATHFIND\n" +
+            $"TargetSystem: {targetSystem}\n" +
+            $"Result: {routeResult.GetRawText()}\n\n";
+
+        await File.AppendAllTextAsync(AppPaths.PathfindLogFile, entry);
+    }
+
+    public static async Task LogApiResponseAsync(
+        string command,
+        object? payload,
+        int statusCode,
+        string? reasonPhrase,
+        string rawResponse,
+        long requestId,
+        long elapsedMs,
+        string? context = null)
+    {
+        string payloadText;
+        try
+        {
+            payloadText = payload == null ? "(null)" : JsonSerializer.Serialize(payload);
+        }
+        catch (Exception ex)
+        {
+            payloadText = $"(payload serialization failed: {ex.Message})";
+        }
+
+        var entry =
+            $"[{DateTime.UtcNow:O}] SPACEMOLT_API\n" +
+            $"Context: {(string.IsNullOrWhiteSpace(context) ? "(none)" : context)}\n" +
+            $"RequestId: {requestId}\n" +
+            $"Command: {command}\n" +
+            $"Payload: {payloadText}\n" +
+            $"ElapsedMs: {elapsedMs}\n" +
+            $"HTTP: {statusCode} {reasonPhrase}\n" +
+            $"Response: {rawResponse}\n\n";
+
+        await File.AppendAllTextAsync(AppPaths.SpaceMoltApiLogFile, entry);
+    }
+
+    public static async Task LogAnalyzeMarketAsync(string stationId, JsonElement analyzeMarketResult)
+    {
+        var entry =
+            $"[{DateTime.UtcNow:O}] ANALYZE_MARKET\n" +
+            $"Station: {stationId}\n" +
+            $"Result: {analyzeMarketResult.GetRawText()}\n\n";
+
+        await File.AppendAllTextAsync(AppPaths.AnalyzeMarketLogFile, entry);
+    }
+
+    public static async Task LogItemCatalogAsync(
+        string type,
+        string? category,
+        string? id,
+        int? page,
+        int? pageSize,
+        string? search,
+        string source,
+        string rawPayload)
+    {
+        var entry =
+            $"[{DateTime.UtcNow:O}] ITEM_CATALOG\n" +
+            $"Source: {source}\n" +
+            $"Params: type={type}, category={category ?? "(null)"}, id={id ?? "(null)"}, page={(page?.ToString() ?? "(null)")}, page_size={(pageSize?.ToString() ?? "(null)")}, search={search ?? "(null)"}\n" +
+            $"Payload: {rawPayload}\n\n";
+
+        await File.AppendAllTextAsync(AppPaths.ItemCatalogLogFile, entry);
+    }
+}

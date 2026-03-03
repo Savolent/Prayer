@@ -1,0 +1,834 @@
+using Superpower;
+using Superpower.Model;
+using Superpower.Parsers;
+using System.Text;
+
+public sealed class DslProgram
+{
+    private readonly Queue<string> _steps;
+
+    public DslProgram(IEnumerable<string> steps)
+    {
+        _steps = new Queue<string>(steps);
+    }
+
+    public bool IsEmpty => _steps.Count == 0;
+
+    public string? Current => _steps.Count > 0 ? _steps.Peek() : null;
+
+    public void Advance()
+    {
+        if (_steps.Count > 0)
+            _steps.Dequeue();
+    }
+
+    public IReadOnlyList<string> AllSteps => _steps.ToList();
+}
+
+public sealed class DslAstProgram
+{
+    public DslAstProgram(IReadOnlyList<DslAstNode> statements)
+    {
+        Statements = statements ?? Array.Empty<DslAstNode>();
+    }
+
+    public IReadOnlyList<DslAstNode> Statements { get; }
+}
+
+public abstract record DslAstNode;
+
+public sealed record DslCommandAstNode(string Name, IReadOnlyList<string> Args, int SourceLine = 0) : DslAstNode;
+
+public sealed record DslBlockAstNode(string Name, IReadOnlyList<DslAstNode> Body, int SourceLine = 0) : DslAstNode;
+
+public static class DslParser
+{
+    private static readonly HashSet<string> FlattenedTradeCommands =
+        new(StringComparer.OrdinalIgnoreCase)
+        {
+            "buy",
+            "sell",
+            "cancel_buy",
+            "cancel_sell",
+            "retrieve",
+            "stash",
+        };
+
+    private static readonly IReadOnlyDictionary<string, string[]> PromptArgNameOverrides =
+        new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["go"] = new[] { "destination" },
+            ["mine"] = new[] { "target" },
+            ["buy"] = new[] { "item", "count" },
+            ["sell"] = new[] { "item" },
+            ["cancel_buy"] = new[] { "item" },
+            ["cancel_sell"] = new[] { "item" },
+            ["retrieve"] = new[] { "item", "count" },
+            ["stash"] = new[] { "item" },
+            ["switch_ship"] = new[] { "ship" },
+            ["install_mod"] = new[] { "mod" },
+            ["uninstall_mod"] = new[] { "mod" },
+            ["buy_ship"] = new[] { "ship_class" },
+            ["buy_listed_ship"] = new[] { "listing" },
+            ["commission_quote"] = new[] { "ship_class" },
+            ["commission_ship"] = new[] { "ship_class" },
+            ["commission_status"] = new[] { "commission" },
+            ["sell_ship"] = new[] { "ship" },
+            ["list_ship_for_sale"] = new[] { "price" },
+        };
+
+    private static readonly IReadOnlyDictionary<DslCommandGroup, IReadOnlyList<ICommand>> CommandsByGroup =
+        BuildCommandsByGroup();
+    private static readonly IReadOnlyDictionary<DslCommandGroup, HashSet<string>> CommandNameSetsByGroup =
+        BuildCommandNameSetsByGroup(CommandsByGroup);
+    private static readonly IReadOnlyDictionary<string, DslCommandSyntax> CommandSyntaxByName =
+        BuildCommandSyntaxByName(CommandsByGroup);
+    private static readonly TextParser<Unit> Ws =
+        Character.WhiteSpace.Many().Value(Unit.Value);
+
+    private static readonly TextParser<Unit> Ws1 =
+        Character.WhiteSpace.AtLeastOnce().Value(Unit.Value);
+
+    private static readonly TextParser<string> Identifier =
+        from first in Character.Letter.Or(Character.EqualTo('_'))
+        from rest in Character.LetterOrDigit
+            .Or(Character.EqualTo('_'))
+            .Or(Character.EqualTo('-'))
+            .Many()
+        select first + new string(rest.ToArray());
+
+    private static readonly TextParser<string> Integer =
+        Span.Regex("[0-9]+").Select(x => x.ToStringValue());
+
+    private static readonly TextParser<string> ArgumentToken =
+        Integer.Try().Or(Identifier);
+
+    private static readonly TextParser<DslAstNode> CommandAst =
+        from commandName in Identifier
+        from commandArgs in (
+            from _ in Ws1
+            from arg in ArgumentToken
+            select arg).Many()
+        from _ in Ws
+        from _semi in Character.EqualTo(';')
+        select (DslAstNode)new DslCommandAstNode(commandName, commandArgs);
+
+    private static readonly TextParser<DslAstNode> BlockAst =
+        from command in Identifier
+        from _ in Ws
+        from ___ in Character.EqualTo('{')
+        from _preBody in Ws
+        from inner in (
+            from statement in StatementAst!
+            select statement).Many()
+        from _postBody in Ws
+        from ______ in Character.EqualTo('}')
+        select (DslAstNode)new DslBlockAstNode(command, inner);
+
+    private static readonly TextParser<DslAstNode> StatementAst =
+        from statement in BlockAst.Try().Or(CommandAst)
+        from _ in Ws
+        select statement;
+
+    private static readonly TextParser<DslAstProgram> ProgramAstParser =
+        from _ in Ws
+        from statements in (
+            from statement in StatementAst!
+            select statement).Many()
+        select new DslAstProgram(statements);
+
+    public static DslAstProgram ParseTree(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+            return new DslAstProgram(Array.Empty<DslAstNode>());
+
+        try
+        {
+            var tree = ProgramAstParser.Parse(text);
+            tree = AnnotateSourceLines(text, tree);
+            ValidateTree(tree, RootGroup);
+            return tree;
+        }
+        catch (ParseException ex)
+        {
+            throw new FormatException($"Invalid DSL script: {ex.Message}", ex);
+        }
+    }
+
+    private readonly record struct StatementLineEntry(int Line);
+
+    private static DslAstProgram AnnotateSourceLines(string text, DslAstProgram tree)
+    {
+        var entries = ExtractStatementLineEntries(text);
+        int entryIndex = 0;
+
+        var annotated = tree.Statements
+            .Select(node => AnnotateNodeLine(node, entries, ref entryIndex))
+            .ToList();
+
+        return new DslAstProgram(annotated);
+    }
+
+    private static DslAstNode AnnotateNodeLine(
+        DslAstNode node,
+        IReadOnlyList<StatementLineEntry> entries,
+        ref int entryIndex)
+    {
+        return node switch
+        {
+            DslCommandAstNode commandNode => commandNode with
+            {
+                SourceLine = ConsumeLine(entries, ref entryIndex)
+            },
+            DslBlockAstNode blockNode => AnnotateBlockNodeLine(blockNode, entries, ref entryIndex),
+            _ => node
+        };
+    }
+
+    private static DslBlockAstNode AnnotateBlockNodeLine(
+        DslBlockAstNode blockNode,
+        IReadOnlyList<StatementLineEntry> entries,
+        ref int entryIndex)
+    {
+        var sourceLine = ConsumeLine(entries, ref entryIndex);
+        var body = new List<DslAstNode>(blockNode.Body.Count);
+        foreach (var child in blockNode.Body)
+            body.Add(AnnotateNodeLine(child, entries, ref entryIndex));
+
+        return new DslBlockAstNode(
+            blockNode.Name,
+            body,
+            sourceLine);
+    }
+
+    private static int ConsumeLine(
+        IReadOnlyList<StatementLineEntry> entries,
+        ref int entryIndex)
+    {
+        if (entryIndex >= entries.Count)
+            return 1;
+
+        return entries[entryIndex++].Line;
+    }
+
+    private static IReadOnlyList<StatementLineEntry> ExtractStatementLineEntries(string text)
+    {
+        var entries = new List<StatementLineEntry>();
+        bool expectingCommand = true;
+        string? currentCommand = null;
+        int currentCommandLine = 1;
+        int line = 1;
+
+        int i = 0;
+        while (i < text.Length)
+        {
+            var c = text[i];
+
+            if (char.IsWhiteSpace(c))
+            {
+                if (c == '\n')
+                    line++;
+                i++;
+                continue;
+            }
+
+            if (expectingCommand)
+            {
+                if (IsIdentifierStart(c))
+                {
+                    currentCommandLine = line;
+                    currentCommand = ReadIdentifier(text, ref i);
+                    expectingCommand = false;
+                    continue;
+                }
+
+                if (c == '}')
+                {
+                    i++;
+                    expectingCommand = true;
+                    continue;
+                }
+
+                i++;
+                continue;
+            }
+
+            if (c == ';' || c == '{')
+            {
+                if (!string.IsNullOrWhiteSpace(currentCommand))
+                    entries.Add(new StatementLineEntry(currentCommandLine));
+
+                currentCommand = null;
+                expectingCommand = true;
+                i++;
+                continue;
+            }
+
+            if (c == '\n')
+                line++;
+
+            i++;
+        }
+
+        return entries;
+    }
+
+    private static bool IsIdentifierStart(char c)
+    {
+        return char.IsLetter(c) || c == '_';
+    }
+
+    private static bool IsIdentifierPart(char c)
+    {
+        return char.IsLetterOrDigit(c) || c == '_' || c == '-';
+    }
+
+    private static string ReadIdentifier(string text, ref int index)
+    {
+        int start = index;
+        index++;
+
+        while (index < text.Length && IsIdentifierPart(text[index]))
+            index++;
+
+        return text.Substring(start, index - start);
+    }
+
+    public static DslProgram Parse(string text)
+    {
+        var tree = ParseTree(text);
+        var commands = DslInterpreter.Translate(tree);
+        var steps = commands.Select(c =>
+        {
+            var parts = new List<string> { c.Action };
+            if (!string.IsNullOrWhiteSpace(c.Arg1))
+                parts.Add(c.Arg1!);
+            if (c.Quantity.HasValue)
+                parts.Add(c.Quantity.Value.ToString());
+            return string.Join(" ", parts);
+        });
+        return new DslProgram(steps);
+    }
+
+    public static string BuildLlamaCppGrammar(DslCommandGroup rootGroup = DslCommandGroup.Space)
+    {
+        var sb = new StringBuilder();
+        var rootName = GroupRuleName(rootGroup);
+
+        sb.AppendLine($"root ::= ws script_{rootName} ws");
+        sb.AppendLine("ws ::= [ \\t\\n\\r]*");
+        sb.AppendLine("identifier ::= [A-Za-z_][A-Za-z0-9_-]*");
+        sb.AppendLine("integer ::= [0-9]+");
+        sb.AppendLine();
+
+        foreach (var group in Enum.GetValues<DslCommandGroup>())
+        {
+            BuildGroupGrammar(group, sb);
+        }
+
+        return sb.ToString().TrimEnd();
+    }
+
+    public static string BuildPromptDslReferenceBlock()
+    {
+        var commands = CommandsByGroup.Values
+            .SelectMany(group => group)
+            .GroupBy(c => c.Name, StringComparer.OrdinalIgnoreCase)
+            .Select(g => g.First())
+            .OrderBy(c => c.Name, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        var entries = commands
+            .Select(c => (Command: c, Syntax: CommandSyntaxByName[c.Name]))
+            .ToList();
+
+        var blockSignatures = entries
+            .Where(e => e.Syntax.AllowsBlock)
+            .Select(e => $"{e.Command.Name} {{ ... }}")
+            .ToList();
+
+        var commandSignatures = entries
+            .Where(e => !e.Syntax.AllowsBlock)
+            .Select(e => BuildPromptCommandSignature(e.Command.Name, e.Syntax))
+            .ToList();
+
+        var sb = new StringBuilder();
+        sb.AppendLine("DSL command/block reference (terminate commands with ;):");
+
+        if (blockSignatures.Count > 0)
+        {
+            sb.AppendLine("Blocks:");
+            foreach (var signature in blockSignatures)
+                sb.AppendLine($"- {signature}");
+        }
+
+        if (commandSignatures.Count > 0)
+        {
+            sb.AppendLine("Commands:");
+            foreach (var signature in commandSignatures)
+                sb.AppendLine($"- {signature}");
+        }
+
+        sb.AppendLine();
+        sb.AppendLine("Rules:");
+        sb.AppendLine("- Commands with block forms must be used as blocks.");
+        sb.AppendLine("- `go` is not allowed inside blocks.");
+        sb.AppendLine("- `mine` is not allowed inside `dock { ... }`.");
+        sb.AppendLine();
+
+        return sb.ToString();
+    }
+
+    internal static string NormalizeCommandStep(
+        string commandName,
+        IReadOnlyList<string>? commandArgs,
+        DslCommandGroup currentGroup)
+    {
+        var token = commandName.ToLowerInvariant();
+        var args = (commandArgs ?? Array.Empty<string>()).ToList();
+        string normalizedName;
+        DslCommandSyntax syntax;
+
+        if (CommandSyntaxByName.TryGetValue(token, out var directSyntax))
+        {
+            normalizedName = token;
+            syntax = directSyntax;
+        }
+        else if (args.Count == 0 &&
+                 TrySplitCollapsedCommand(commandName, currentGroup, out var splitName, out var splitArg))
+        {
+            normalizedName = splitName;
+            syntax = CommandSyntaxByName[splitName];
+            args.Add(splitArg);
+        }
+        else
+        {
+            normalizedName = token;
+            return args.Count == 0
+                ? normalizedName
+                : $"{normalizedName} {string.Join(" ", args)}";
+        }
+
+        var specs = ResolveArgSpecs(syntax);
+        if (specs.Count == 0)
+        {
+            return normalizedName;
+        }
+
+        for (int i = args.Count; i < specs.Count; i++)
+        {
+            if (!string.IsNullOrWhiteSpace(specs[i].DefaultValue))
+                args.Add(specs[i].DefaultValue!);
+        }
+
+        return args.Count == 0
+            ? normalizedName
+            : $"{normalizedName} {string.Join(" ", args)}";
+    }
+
+    internal static DslCommandGroup RootGroup => DslCommandGroup.Space;
+
+    internal static DslCommandGroup ResolveBlockBodyGroup(string commandName, DslCommandGroup currentGroup)
+    {
+        if (TryResolveBlockBodyGroup(commandName, currentGroup, out var bodyGroup))
+            return bodyGroup;
+
+        return currentGroup;
+    }
+
+    private static IReadOnlyDictionary<DslCommandGroup, IReadOnlyList<ICommand>> BuildCommandsByGroup()
+    {
+        var flattenedSpaceCommands = SpaceContextMode.Instance.GetCommands()
+            .Concat(TradeContextMode.Instance.GetCommands()
+                .Where(c => FlattenedTradeCommands.Contains(c.Name)))
+            .ToList();
+
+        return new Dictionary<DslCommandGroup, IReadOnlyList<ICommand>>
+        {
+            [DslCommandGroup.Space] = UniqueByName(flattenedSpaceCommands),
+            [DslCommandGroup.Trade] = UniqueByName(TradeContextMode.Instance.GetCommands()),
+            [DslCommandGroup.Hangar] = UniqueByName(HangarContextMode.Instance.GetCommands()),
+            [DslCommandGroup.Shipyard] = UniqueByName(ShipyardContextMode.Instance.GetCommands()),
+            [DslCommandGroup.ShipCatalog] = UniqueByName(ShipCatalogContextMode.Instance.GetCommands()),
+        };
+    }
+
+    private static IReadOnlyDictionary<DslCommandGroup, HashSet<string>> BuildCommandNameSetsByGroup(
+        IReadOnlyDictionary<DslCommandGroup, IReadOnlyList<ICommand>> commandsByGroup)
+    {
+        var result = new Dictionary<DslCommandGroup, HashSet<string>>();
+        foreach (var (group, commands) in commandsByGroup)
+        {
+            result[group] = commands
+                .Select(c => c.Name)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        }
+
+        return result;
+    }
+
+    private static IReadOnlyDictionary<string, DslCommandSyntax> BuildCommandSyntaxByName(
+        IReadOnlyDictionary<DslCommandGroup, IReadOnlyList<ICommand>> commandsByGroup)
+    {
+        var map = new Dictionary<string, DslCommandSyntax>(StringComparer.OrdinalIgnoreCase);
+        foreach (var group in commandsByGroup.Values)
+        {
+            foreach (var command in group)
+            {
+                if (map.ContainsKey(command.Name))
+                    continue;
+
+                var syntax = command is IDslCommandGrammar provider
+                    ? provider.GetDslSyntax()
+                    : new DslCommandSyntax();
+                map[command.Name] = syntax;
+            }
+        }
+
+        return map;
+    }
+
+    private static IReadOnlyList<ICommand> UniqueByName(IReadOnlyList<ICommand> commands)
+        => commands
+            .GroupBy(c => c.Name, StringComparer.OrdinalIgnoreCase)
+            .Select(g => g.First())
+            .ToList();
+
+    private static void BuildGroupGrammar(DslCommandGroup group, StringBuilder sb)
+    {
+        var groupName = GroupRuleName(group);
+        var commands = CommandsByGroup[group]
+            .OrderBy(c => c.Name, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        var statementRules = new List<string>();
+
+        foreach (var command in commands)
+        {
+            var commandName = command.Name.ToLowerInvariant();
+            var syntax = CommandSyntaxByName[commandName];
+            var commandRuleName = $"cmd_{groupName}_{RuleToken(commandName)}";
+            var headPattern = BuildCommandHeadPattern(commandName, syntax);
+
+            if (syntax.AllowsBlock)
+            {
+                var bodyGroup = syntax.BlockBodyGroup ?? group;
+                var bodyGroupName = GroupRuleName(bodyGroup);
+                sb.AppendLine(
+                    $"{commandRuleName} ::= {headPattern} ws \"{{\" ws script_{bodyGroupName} ws \"}}\"");
+            }
+            else
+            {
+                sb.AppendLine($"{commandRuleName} ::= {headPattern} ws \";\"");
+            }
+
+            statementRules.Add(commandRuleName);
+        }
+
+        sb.AppendLine($"statement_{groupName} ::= {string.Join(" | ", statementRules)}");
+        sb.AppendLine($"script_{groupName} ::= (ws statement_{groupName})*");
+        sb.AppendLine();
+    }
+
+    private static string BuildCommandHeadPattern(string commandName, DslCommandSyntax syntax)
+    {
+        var nameLiteral = Quote(commandName);
+        var specs = ResolveArgSpecs(syntax);
+        if (specs.Count == 0)
+            return nameLiteral;
+
+        var requiredCount = specs.Count(s => s.Required && string.IsNullOrWhiteSpace(s.DefaultValue));
+        var maxCount = specs.Count;
+        var patterns = new List<string>();
+        for (int count = requiredCount; count <= maxCount; count++)
+        {
+            var parts = new List<string> { nameLiteral };
+            for (int i = 0; i < count; i++)
+                parts.Add($"ws {ArgKindPattern(specs[i].Kind)}");
+            patterns.Add(string.Join(" ", parts));
+        }
+
+        return patterns.Count == 1
+            ? patterns[0]
+            : $"({string.Join(" | ", patterns)})";
+    }
+
+    private static IReadOnlyList<DslArgumentSpec> ResolveArgSpecs(DslCommandSyntax syntax)
+    {
+        if (syntax.ArgSpecs != null && syntax.ArgSpecs.Count > 0)
+            return syntax.ArgSpecs;
+
+        if (syntax.ArgKind == DslArgKind.None)
+            return Array.Empty<DslArgumentSpec>();
+
+        return new[] { new DslArgumentSpec(syntax.ArgKind, syntax.ArgRequired, syntax.DefaultArg) };
+    }
+
+    private static string BuildPromptCommandSignature(string commandName, DslCommandSyntax syntax)
+    {
+        var specs = ResolveArgSpecs(syntax);
+        if (specs.Count == 0)
+            return $"{commandName};";
+
+        var argTokens = BuildPromptArgTokens(commandName, specs);
+
+        return $"{commandName} {string.Join(" ", argTokens)};";
+    }
+
+    private static IReadOnlyList<string> BuildPromptArgTokens(
+        string commandName,
+        IReadOnlyList<DslArgumentSpec> specs)
+    {
+        PromptArgNameOverrides.TryGetValue(commandName, out var overrideNames);
+        var used = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        var tokens = new List<string>(specs.Count);
+
+        for (int i = 0; i < specs.Count; i++)
+        {
+            var spec = specs[i];
+            bool optional = !spec.Required || !string.IsNullOrWhiteSpace(spec.DefaultValue);
+            var baseName =
+                overrideNames != null &&
+                i < overrideNames.Length &&
+                !string.IsNullOrWhiteSpace(overrideNames[i])
+                    ? overrideNames[i]
+                    : InferPromptArgBaseName(spec.Kind);
+
+            used.TryGetValue(baseName, out var seenCount);
+            var tokenName = seenCount == 0 ? baseName : $"{baseName}{seenCount + 1}";
+            used[baseName] = seenCount + 1;
+
+            tokens.Add(optional ? $"<{tokenName}?>" : $"<{tokenName}>");
+        }
+
+        return tokens;
+    }
+
+    private static string InferPromptArgBaseName(DslArgKind kind)
+        => kind switch
+        {
+            DslArgKind.Integer => "count",
+            DslArgKind.String => "item",
+            _ => "item"
+        };
+
+    private static string ArgKindPattern(DslArgKind kind)
+        => kind switch
+        {
+            DslArgKind.Integer => "integer",
+            DslArgKind.String => "identifier",
+            _ => "identifier"
+        };
+
+    private static string RuleToken(string value)
+        => string.Concat(value.Select(ch => char.IsLetterOrDigit(ch) ? ch : '_'));
+
+    private static string GroupRuleName(DslCommandGroup group)
+        => group.ToString().ToLowerInvariant();
+
+    private static string Quote(string value)
+        => $"\"{value.Replace("\\", "\\\\").Replace("\"", "\\\"")}\"";
+
+    private static bool IsValidIdentifier(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return false;
+
+        if (!(char.IsLetter(value[0]) || value[0] == '_'))
+            return false;
+
+        for (int i = 1; i < value.Length; i++)
+        {
+            var ch = value[i];
+            if (!(char.IsLetterOrDigit(ch) || ch == '_' || ch == '-'))
+                return false;
+        }
+
+        return true;
+    }
+
+    private static bool TrySplitCollapsedCommand(
+        string token,
+        DslCommandGroup group,
+        out string commandName,
+        out string arg)
+    {
+        commandName = "";
+        arg = "";
+
+        if (!CommandNameSetsByGroup.TryGetValue(group, out var allowed))
+            return false;
+
+        var candidates = allowed
+            .Where(name => token.Length > name.Length &&
+                           token.StartsWith(name, StringComparison.OrdinalIgnoreCase))
+            .OrderByDescending(name => name.Length);
+
+        foreach (var candidate in candidates)
+        {
+            if (!CommandSyntaxByName.TryGetValue(candidate, out var syntax))
+                continue;
+
+            var specs = ResolveArgSpecs(syntax);
+            if (specs.Count != 1)
+                continue;
+            var firstKind = specs[0].Kind;
+            if (firstKind != DslArgKind.Identifier && firstKind != DslArgKind.String)
+                continue;
+
+            var remainder = token[candidate.Length..];
+            if (!IsValidIdentifier(remainder))
+                continue;
+
+            commandName = candidate.ToLowerInvariant();
+            arg = remainder;
+            return true;
+        }
+
+        return false;
+    }
+
+    private static void ValidateTree(DslAstProgram tree, DslCommandGroup rootGroup)
+    {
+        ValidateNodes(tree.Statements, rootGroup, inDockScope: false, inAnyBlock: false);
+    }
+
+    private static void ValidateNodes(
+        IReadOnlyList<DslAstNode> nodes,
+        DslCommandGroup currentGroup,
+        bool inDockScope,
+        bool inAnyBlock)
+    {
+        foreach (var node in nodes)
+        {
+            switch (node)
+            {
+                case DslCommandAstNode commandNode:
+                {
+                    var normalizedName = (commandNode.Name ?? "").Trim().ToLowerInvariant();
+                    var args = commandNode.Args ?? Array.Empty<string>();
+
+                    if (CommandSyntaxByName.TryGetValue(normalizedName, out var syntax) && syntax.AllowsBlock)
+                    {
+                        throw new FormatException(
+                            $"Command '{normalizedName};' is not allowed. Use block syntax: {normalizedName} {{ ... }}");
+                    }
+
+                    if (inAnyBlock && string.Equals(normalizedName, "go", StringComparison.Ordinal))
+                    {
+                        throw new FormatException("Command 'go' is not allowed inside blocks.");
+                    }
+
+                    if (inDockScope && string.Equals(normalizedName, "mine", StringComparison.Ordinal))
+                    {
+                        throw new FormatException("Command 'mine' is not allowed inside dock blocks.");
+                    }
+
+                    if (!IsCommandAllowedInGroup(commandNode.Name, commandNode.Args, currentGroup))
+                    {
+                        throw new FormatException(
+                            $"Command '{commandNode.Name}' is not allowed in {currentGroup} scope.");
+                    }
+
+                    if (CommandSyntaxByName.TryGetValue(normalizedName, out var commandSyntax))
+                        ValidateCommandArgs(normalizedName, args, commandSyntax);
+
+                    break;
+                }
+                case DslBlockAstNode blockNode:
+                {
+                    if (!TryResolveBlockBodyGroup(blockNode.Name, currentGroup, out var bodyGroup))
+                    {
+                        throw new FormatException(
+                            $"Block '{blockNode.Name}' is not allowed in {currentGroup} scope.");
+                    }
+
+                    var blockName = (blockNode.Name ?? "").Trim();
+                    var childInDockScope =
+                        inDockScope ||
+                        string.Equals(blockName, "dock", StringComparison.OrdinalIgnoreCase);
+
+                    ValidateNodes(blockNode.Body, bodyGroup, childInDockScope, inAnyBlock: true);
+                    break;
+                }
+                default:
+                    throw new FormatException("Unknown DSL AST node.");
+            }
+        }
+    }
+
+    private static bool IsCommandAllowedInGroup(
+        string commandName,
+        IReadOnlyList<string>? commandArgs,
+        DslCommandGroup currentGroup)
+    {
+        if (!CommandNameSetsByGroup.TryGetValue(currentGroup, out var allowed))
+            return false;
+
+        var normalized = commandName.ToLowerInvariant();
+        if (allowed.Contains(normalized))
+            return true;
+
+        return (commandArgs == null || commandArgs.Count == 0) &&
+               TrySplitCollapsedCommand(commandName, currentGroup, out var splitName, out _) &&
+               allowed.Contains(splitName);
+    }
+
+    private static void ValidateCommandArgs(
+        string commandName,
+        IReadOnlyList<string> args,
+        DslCommandSyntax syntax)
+    {
+        var specs = ResolveArgSpecs(syntax);
+        if (specs.Count == 0)
+        {
+            if (args.Count > 0)
+                throw new FormatException($"Command '{commandName}' does not take arguments.");
+            return;
+        }
+
+        if (args.Count > specs.Count)
+            throw new FormatException($"Command '{commandName}' has too many arguments.");
+
+        var requiredCount = specs.Count(s => s.Required && string.IsNullOrWhiteSpace(s.DefaultValue));
+        if (args.Count < requiredCount)
+            throw new FormatException($"Command '{commandName}' is missing required arguments.");
+
+        for (int i = 0; i < args.Count; i++)
+        {
+            if (!IsArgValueValid(args[i], specs[i].Kind))
+            {
+                throw new FormatException(
+                    $"Command '{commandName}' argument {i + 1} must be {specs[i].Kind.ToString().ToLowerInvariant()}.");
+            }
+        }
+    }
+
+    private static bool IsArgValueValid(string value, DslArgKind kind)
+        => kind switch
+        {
+            DslArgKind.Integer => int.TryParse(value, out _),
+            DslArgKind.String => IsValidIdentifier(value),
+            DslArgKind.Identifier => IsValidIdentifier(value),
+            _ => false
+        };
+
+    private static bool TryResolveBlockBodyGroup(
+        string blockName,
+        DslCommandGroup currentGroup,
+        out DslCommandGroup bodyGroup)
+    {
+        var normalized = blockName.ToLowerInvariant();
+
+        if (CommandNameSetsByGroup.TryGetValue(currentGroup, out var allowedInParent) &&
+            allowedInParent.Contains(normalized) &&
+            CommandSyntaxByName.TryGetValue(normalized, out var syntax) &&
+            syntax.AllowsBlock)
+        {
+            bodyGroup = syntax.BlockBodyGroup ?? currentGroup;
+            return true;
+        }
+
+        bodyGroup = default;
+        return false;
+    }
+}

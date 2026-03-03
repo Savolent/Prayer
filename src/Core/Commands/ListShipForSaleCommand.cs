@@ -1,0 +1,41 @@
+using System;
+using System.Text.Json;
+using System.Threading.Tasks;
+
+public class ListShipForSaleCommand : ISingleTurnCommand
+{
+    public string Name => "list_ship_for_sale";
+
+    public bool IsAvailable(GameState state)
+        => state.Mode.Kind == GameContextKind.Shipyard && state.Docked && state.CurrentPOI.IsStation;
+    public string BuildHelp(GameState state)
+        => "- list_ship_for_sale <shipId> <price> → list your ship on the exchange";
+
+    public async Task<CommandExecutionResult?> ExecuteAsync(
+        SpaceMoltHttpClient client,
+        CommandResult cmd,
+        GameState state)
+    {
+        var shipId = cmd.Arg1?.Trim();
+        if (string.IsNullOrWhiteSpace(shipId) || !cmd.Quantity.HasValue || cmd.Quantity.Value <= 0)
+        {
+            return new CommandExecutionResult
+            {
+                ResultMessage = "Usage: list_ship_for_sale <shipId> <price>."
+            };
+        }
+
+        JsonElement response = await client.ExecuteAsync(
+            "list_ship_for_sale",
+            new
+            {
+                ship_id = shipId,
+                price = cmd.Quantity.Value
+            });
+
+        return new CommandExecutionResult
+        {
+            ResultMessage = CommandJson.TryGetResultMessage(response) ?? $"Listed ship {shipId} for {cmd.Quantity.Value}cr."
+        };
+    }
+}
