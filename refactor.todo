@@ -1,11 +1,3 @@
-Low: multiple unused vestigial artifacts
-SimpleConsoleUI, async Log helper, ControlModes.FromKind, and FuzzyMatchLogFile appear unused.
-consoleui.cs (line 5)
-Program.cs (line 33)
-Log.cs (line 3)
-ControlMode.cs (line 24)
-AppPaths.cs (line 21)
-
 Low: dead abstraction in GameContextMode
 BuildActionsBlock and ToLlmMarkdown are declared/implemented but unused outside GameModes.cs.
 GameModes.cs (line 9)
