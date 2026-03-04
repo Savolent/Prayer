@@ -22,7 +22,7 @@ public sealed class AgentUiStateBuilder : IAgentUiStateBuilder
         string? CatalogStateMarkdown)
         BuildUiState(GameState state)
     {
-        var spaceState = state.ToDisplayText();
+        var spaceState = BuildSpaceUiState(state);
         var tradeState = state.Docked
             ? BuildTradeUiState(state)
             : null;
@@ -35,6 +35,18 @@ public sealed class AgentUiStateBuilder : IAgentUiStateBuilder
         var catalogState = BuildCatalogUiState(state);
 
         return (spaceState, tradeState, shipyardState, cantinaState, catalogState);
+    }
+
+    private static string BuildSpaceUiState(GameState state)
+    {
+        var baseSpaceState = state.ToDisplayText();
+        var activeMissions = FormatActiveMissionsForSpace(state.ActiveMissions);
+
+        return
+$@"{baseSpaceState}
+
+ACTIVE MISSIONS
+{activeMissions}";
     }
 
     private static string BuildTradeUiState(GameState state)
@@ -106,11 +118,7 @@ SHIPS
 
     private static string BuildCantinaUiState(GameState state)
     {
-        string activeMissions = GameState.StripMarkdown(GameState.FormatMissions(state.ActiveMissions));
         string availableMissions = GameState.StripMarkdown(GameState.FormatMissions(state.AvailableMissions));
-
-        if (string.IsNullOrWhiteSpace(activeMissions))
-            activeMissions = "- _(none)_";
         if (string.IsNullOrWhiteSpace(availableMissions))
             availableMissions = "- _(none)_";
 
@@ -119,11 +127,49 @@ $@"CONTEXT: CANTINA
 STATION: {state.CurrentPOI.Id}
 CREDITS: {state.Credits}
 
-ACTIVE MISSIONS
-{activeMissions}
-
 AVAILABLE MISSIONS
 {availableMissions}{state.BuildNotificationsDisplaySection()}";
+    }
+
+    private static string FormatActiveMissionsForSpace(MissionInfo[] missions)
+    {
+        if (missions == null || missions.Length == 0)
+            return "- (none)";
+
+        return string.Join("\n", missions.Select(FormatActiveMissionForSpace));
+    }
+
+    private static string FormatActiveMissionForSpace(MissionInfo mission)
+    {
+        var name = FirstNonEmpty(
+            mission.Title,
+            mission.MissionId,
+            mission.Id,
+            "mission");
+        var objectives = FirstNonEmpty(
+            mission.ObjectivesSummary,
+            mission.Description,
+            "(none)");
+        var progress = FirstNonEmpty(
+            mission.ProgressText,
+            mission.ProgressSummary,
+            "(none)");
+
+        return
+$@"- {name}
+  objectives: {objectives}
+  progress: {progress}";
+    }
+
+    private static string FirstNonEmpty(params string[] values)
+    {
+        foreach (var value in values)
+        {
+            if (!string.IsNullOrWhiteSpace(value))
+                return value.Trim();
+        }
+
+        return "";
     }
 
     private static string BuildCatalogUiState(GameState state)

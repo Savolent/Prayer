@@ -14,7 +14,6 @@ public sealed class ScriptGenerationService
     private readonly ScriptGenerationExampleStore _exampleStore;
     private readonly IAgentLogger _logger;
     private readonly string _baseSystemPrompt;
-    private readonly string _defaultExamples;
     private readonly Action<string>? _setStatus;
 
     public ScriptGenerationService(
@@ -22,14 +21,12 @@ public sealed class ScriptGenerationService
         ScriptGenerationExampleStore exampleStore,
         IAgentLogger logger,
         string baseSystemPrompt,
-        string defaultExamples,
         Action<string>? setStatus = null)
     {
         _plannerLlm = plannerLlm;
         _exampleStore = exampleStore;
         _logger = logger;
         _baseSystemPrompt = baseSystemPrompt;
-        _defaultExamples = defaultExamples;
         _setStatus = setStatus;
     }
 
@@ -98,9 +95,6 @@ public sealed class ScriptGenerationService
     private async Task<string> BuildScriptGenerationExamplesBlockAsync(string generationInput)
     {
         var sb = new StringBuilder();
-        sb.Append(_defaultExamples.TrimEnd());
-        sb.Append("\n\n");
-
         IReadOnlyList<PromptScriptMatch> matches = await _exampleStore.FindTopMatchesAsync(generationInput, maxMatches: 5);
 
         if (matches.Count == 0)

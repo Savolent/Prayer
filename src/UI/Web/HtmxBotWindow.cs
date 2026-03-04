@@ -879,47 +879,31 @@ public sealed class HtmxBotWindow : IAppUi
         string? cantinaStateMarkdown)
     {
         var sb = new StringBuilder();
-        sb.AppendLine("Create a SpaceMolt script that progresses these active mission objectives.");
-        sb.AppendLine("Prioritize objectives that can be completed at the current station, then route efficiently for the rest.");
-        sb.AppendLine("Use only valid commands and keep the script concise.");
-        
-        bool wroteObjectives = false;
+        bool wroteAnyLine = false;
         if (activeMissionPrompts != null && activeMissionPrompts.Count > 0)
         {
-            sb.AppendLine();
-            sb.AppendLine("Active mission objectives:");
             foreach (var mission in activeMissionPrompts)
             {
-                var label = (mission.Label ?? string.Empty).Trim();
                 var objective = (mission.Prompt ?? string.Empty).Trim();
-                if (string.IsNullOrWhiteSpace(label) && string.IsNullOrWhiteSpace(objective))
-                    continue;
+                var issuingPoi = (mission.IssuingPoi ?? string.Empty).Trim();
 
-                if (string.IsNullOrWhiteSpace(label))
+                if (!string.IsNullOrWhiteSpace(objective))
+                {
                     sb.Append("- ").AppendLine(objective);
-                else if (string.IsNullOrWhiteSpace(objective))
-                    sb.Append("- ").AppendLine(label);
-                else
-                    sb.Append("- ").Append(label).Append(": ").AppendLine(objective);
+                    wroteAnyLine = true;
+                }
 
-                wroteObjectives = true;
+                if (!string.IsNullOrWhiteSpace(issuingPoi))
+                {
+                    sb.Append("- finish_quest: Go to ").AppendLine(issuingPoi);
+                    wroteAnyLine = true;
+                }
             }
         }
 
-        if (!wroteObjectives)
+        if (!wroteAnyLine)
         {
-            var cantina = (cantinaStateMarkdown ?? string.Empty).Trim();
-            sb.AppendLine();
-            if (!string.IsNullOrWhiteSpace(cantina))
-            {
-                sb.AppendLine("Use this cantina mission context:");
-                sb.AppendLine(cantina);
-            }
-            else
-            {
-                sb.AppendLine("Mission objectives were not parsed in the latest snapshot.");
-                sb.AppendLine("Inspect current mission details in state and create the best mission-progress script.");
-            }
+            sb.AppendLine("- (no active mission objectives)");
         }
 
         return sb.ToString().Trim();

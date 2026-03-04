@@ -38,6 +38,7 @@ public sealed class DslAstProgram
 public abstract record DslAstNode;
 
 public sealed record DslCommandAstNode(string Name, IReadOnlyList<string> Args, int SourceLine = 0) : DslAstNode;
+public sealed record DslRepeatAstNode(IReadOnlyList<DslAstNode> Body, int SourceLine = 0) : DslAstNode;
 
 public static class DslParser
 {
@@ -45,8 +46,7 @@ public static class DslParser
         new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase)
         {
             ["go"] = new[] { "destination" },
-            ["mine"] = new[] { "target" },
-            ["seek"] = new[] { "resource" },
+            ["mine"] = new[] { "target_or_resource" },
             ["buy"] = new[] { "item", "count" },
             ["sell"] = new[] { "item" },
             ["cancel_buy"] = new[] { "item" },
@@ -103,8 +103,18 @@ public static class DslParser
         from _semi in Character.EqualTo(';')
         select (DslAstNode)new DslCommandAstNode(commandName, commandArgs);
 
+    private static readonly TextParser<DslAstNode> RepeatAst =
+        from _repeat in Span.EqualToIgnoreCase("repeat").Value(Unit.Value)
+        from _ in Ws
+        from _open in Character.EqualTo('{')
+        from __ in Ws
+        from body in Superpower.Parse.Ref(() => StatementAst!).Many()
+        from ___ in Ws
+        from _close in Character.EqualTo('}')
+        select (DslAstNode)new DslRepeatAstNode(body);
+
     private static readonly TextParser<DslAstNode> StatementAst =
-        from statement in CommandAst
+        from statement in RepeatAst.Try().Or(CommandAst)
         from _ in Ws
         select statement;
 
@@ -140,9 +150,9 @@ public static class DslParser
         var entries = ExtractStatementLineEntries(text);
         int entryIndex = 0;
 
-        var annotated = tree.Statements
-            .Select(node => AnnotateNodeLine(node, entries, ref entryIndex))
-            .ToList();
+        var annotated = new List<DslAstNode>(tree.Statements.Count);
+        foreach (var node in tree.Statements)
+            annotated.Add(AnnotateNodeLine(node, entries, ref entryIndex));
 
         return new DslAstProgram(annotated);
     }
@@ -158,8 +168,68 @@ public static class DslParser
             {
                 SourceLine = ConsumeLine(entries, ref entryIndex)
             },
+            DslRepeatAstNode repeatNode => AnnotateRepeatNode(repeatNode, entries, ref entryIndex),
             _ => node
         };
+    }
+
+    private static DslRepeatAstNode AnnotateRepeatNode(
+        DslRepeatAstNode repeatNode,
+        IReadOnlyList<StatementLineEntry> entries,
+        ref int entryIndex)
+    {
+        var body = new List<DslAstNode>(repeatNode.Body.Count);
+        foreach (var child in repeatNode.Body)
+            body.Add(AnnotateNodeLine(child, entries, ref entryIndex));
+
+        int sourceLine = repeatNode.SourceLine > 0
+            ? repeatNode.SourceLine
+            : InferRepeatSourceLine(repeatNode with { Body = body }, entries, entryIndex);
+
+        return repeatNode with
+        {
+            SourceLine = sourceLine,
+            Body = body
+        };
+    }
+
+    private static int InferRepeatSourceLine(
+        DslRepeatAstNode repeatNode,
+        IReadOnlyList<StatementLineEntry> entries,
+        int entryIndex)
+    {
+        if (repeatNode.Body != null && repeatNode.Body.Count > 0)
+        {
+            var firstLine = FindFirstCommandLine(repeatNode.Body);
+            if (firstLine > 0)
+                return firstLine;
+        }
+
+        if (entryIndex < entries.Count)
+            return entries[entryIndex].Line;
+
+        return 1;
+    }
+
+    private static int FindFirstCommandLine(IReadOnlyList<DslAstNode> nodes)
+    {
+        foreach (var node in nodes)
+        {
+            switch (node)
+            {
+                case DslCommandAstNode commandNode when commandNode.SourceLine > 0:
+                    return commandNode.SourceLine;
+                case DslRepeatAstNode repeatNode:
+                {
+                    var nested = FindFirstCommandLine(repeatNode.Body);
+                    if (nested > 0)
+                        return nested;
+                    break;
+                }
+            }
+        }
+
+        return 0;
     }
 
     private static int ConsumeLine(
@@ -196,8 +266,16 @@ public static class DslParser
             {
                 if (IsIdentifierStart(c))
                 {
-                    currentCommandLine = line;
-                    _ = ReadIdentifier(text, ref i);
+                    int identifierLine = line;
+                    string token = ReadIdentifier(text, ref i);
+                    if (IsRepeatToken(token, text, i))
+                    {
+                        SkipRepeatHeader(text, ref i, ref line);
+                        expectingCommand = true;
+                        continue;
+                    }
+
+                    currentCommandLine = identifierLine;
                     expectingCommand = false;
                     continue;
                 }
@@ -221,6 +299,39 @@ public static class DslParser
         }
 
         return entries;
+    }
+
+    private static bool IsRepeatToken(string token, string text, int indexAfterToken)
+    {
+        if (!token.Equals("repeat", StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        int i = indexAfterToken;
+        SkipWhitespace(text, ref i);
+        return i < text.Length && text[i] == '{';
+    }
+
+    private static void SkipRepeatHeader(string text, ref int index, ref int line)
+    {
+        SkipWhitespaceAndCountLines(text, ref index, ref line);
+        if (index < text.Length && text[index] == '{')
+            index++;
+    }
+
+    private static void SkipWhitespace(string text, ref int index)
+    {
+        while (index < text.Length && char.IsWhiteSpace(text[index]))
+            index++;
+    }
+
+    private static void SkipWhitespaceAndCountLines(string text, ref int index, ref int line)
+    {
+        while (index < text.Length && char.IsWhiteSpace(text[index]))
+        {
+            if (text[index] == '\n')
+                line++;
+            index++;
+        }
     }
 
     private static bool IsIdentifierStart(char c)
@@ -300,7 +411,8 @@ public static class DslParser
 
         sb.AppendLine();
         sb.AppendLine("Rules:");
-        sb.AppendLine("- Blocks are not supported. Use one command per line with ';'.");
+        sb.AppendLine("- Blocks are supported via: repeat { ... }");
+        sb.AppendLine("- All commands still end with ';' inside repeat blocks.");
         sb.AppendLine();
 
         return sb.ToString();
@@ -419,7 +531,8 @@ public static class DslParser
             statementRules.Add(commandRuleName);
         }
 
-        sb.AppendLine($"statement ::= {string.Join(" | ", statementRules)}");
+        sb.AppendLine("repeat_stmt ::= \"repeat\" ws \"{\" ws statement* ws \"}\"");
+        sb.AppendLine($"statement ::= {string.Join(" | ", statementRules)} | repeat_stmt");
         sb.AppendLine("script ::= (ws statement)*");
         sb.AppendLine();
     }
@@ -621,6 +734,11 @@ public static class DslParser
                     if (CommandSyntaxByName.TryGetValue(normalizedName, out var commandSyntax))
                         ValidateCommandArgs(normalizedName, args, commandSyntax);
 
+                    break;
+                }
+                case DslRepeatAstNode repeatNode:
+                {
+                    ValidateNodes(repeatNode.Body ?? Array.Empty<DslAstNode>());
                     break;
                 }
                 default:

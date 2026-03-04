@@ -1,5 +1,5 @@
 public sealed record BotTab(string Id, string Label);
-public sealed record MissionPromptOption(string MissionId, string Label, string Prompt);
+public sealed record MissionPromptOption(string MissionId, string Label, string Prompt, string IssuingPoi);
 public sealed record LoopUpdate(bool? Enabled);
 
 public enum AddBotMode

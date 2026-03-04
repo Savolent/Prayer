@@ -36,7 +36,8 @@ public static class MissionPromptBuilder
             options.Add(new MissionPromptOption(
                 missionId ?? string.Empty,
                 label,
-                objective.Trim()));
+                objective.Trim(),
+                (mission.IssuingBase ?? string.Empty).Trim()));
         }
 
         return options;

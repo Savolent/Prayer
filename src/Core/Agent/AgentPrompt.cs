@@ -5,21 +5,6 @@ public static class AgentPrompt
         "Your objective is to pursue the active objective. " +
         "Make rational, goal-directed decisions based on the current game state. ";
 
-    public const string DefaultScriptGenerationExamples =
-        "Go, sell, then mine ->\n" +
-        "go system_a;\n" +
-        "sell cargo;\n" +
-        "mine asteroid_belt;\n\n" +
-        "Go to Sol ->\n" +
-        "go sol;\n\n" +
-        "Sell your cargo ->\n" +
-        "sell cargo;\n\n" +
-        "Go to system, mine, and sell at other system ->\n" +
-        "go system_a;\n" +
-        "mine asteroid_belt;\n" +
-        "go system_b;\n" +
-        "sell cargo;";
-
     private static readonly string DslCommandReferenceBlock = DslParser.BuildPromptDslReferenceBlock();
 
     public static string BuildExecutorPrompt(

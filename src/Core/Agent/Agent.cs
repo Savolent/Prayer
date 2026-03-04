@@ -39,7 +39,6 @@ public class SpaceMoltAgent
             _exampleStore,
             logger,
             AgentPrompt.BaseSystemPrompt,
-            AgentPrompt.DefaultScriptGenerationExamples,
             SetStatus);
         _execution = new CommandExecutionEngine(
             CommandCatalog.All,

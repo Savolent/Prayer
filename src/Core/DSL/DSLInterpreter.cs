@@ -5,6 +5,8 @@ using System.Text;
 
 public static class DslInterpreter
 {
+    private const int RepeatUnrollIterations = 1000;
+
     public static string NormalizeScript(string dslScript, GameState? state = null)
     {
         if (string.IsNullOrWhiteSpace(dslScript))
@@ -110,6 +112,12 @@ public static class DslInterpreter
 
                     result.SourceLine = commandNode.SourceLine;
                     output.Add(result);
+                    break;
+                }
+                case DslRepeatAstNode repeatNode:
+                {
+                    for (int i = 0; i < RepeatUnrollIterations; i++)
+                        InterpretNodes(repeatNode.Body ?? Array.Empty<DslAstNode>(), state, output);
                     break;
                 }
                 default:
