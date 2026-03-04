@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 
 public sealed class BotRuntime
 {
+    private const int ScriptStepRetryLimit = 10;
     private readonly string _label;
     private readonly SpaceMoltAgent _agent;
     private readonly SpaceMoltHttpClient _client;
@@ -210,15 +211,15 @@ public sealed class BotRuntime
                                 : 1;
                             scriptStepFailureCounts[stepKey] = failures;
 
-                            if (failures < 3)
+                            if (failures < ScriptStepRetryLimit)
                             {
                                 _agent.RequeueScriptStep(result);
-                                _publishStatus($"[{_label}] Script step failed (attempt {failures}/3), retrying: {FormatCommand(result)} | {ex.Message}");
+                                _publishStatus($"[{_label}] Script step failed (attempt {failures}/{ScriptStepRetryLimit}), retrying: {FormatCommand(result)} | {ex.Message}");
                             }
                             else
                             {
                                 scriptStepFailureCounts.Remove(stepKey);
-                                _publishStatus($"[{_label}] Script step failed after 3 attempts, skipping: {FormatCommand(result)} | {ex.Message}");
+                                _publishStatus($"[{_label}] Script step failed after {ScriptStepRetryLimit} attempts, skipping: {FormatCommand(result)} | {ex.Message}");
                             }
 
                             _publishSnapshot(currentState);
