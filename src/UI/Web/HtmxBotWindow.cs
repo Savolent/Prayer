@@ -597,6 +597,7 @@ public sealed class HtmxBotWindow : IAppUi
             sb.Append("'").Append(Js(commandNames[i])).Append("'");
         }
         sb.AppendLine("];");
+        sb.AppendLine("  var controlKeywords = ['repeat', 'halt'];");
         sb.AppendLine("  window.buildNameRegex = function (names, lineStartOnly) {");
         sb.AppendLine("    if (!Array.isArray(names) || names.length === 0) return null;");
         sb.AppendLine("    var escaped = names");
@@ -609,6 +610,7 @@ public sealed class HtmxBotWindow : IAppUi
         sb.AppendLine("    return new RegExp(pattern, 'i');");
         sb.AppendLine("  };");
         sb.AppendLine("  window._scriptCommandRegex = window.buildNameRegex(commands, true);");
+        sb.AppendLine("  window._scriptKeywordRegex = window.buildNameRegex(controlKeywords, true);");
         sb.AppendLine("  window._scriptSystemRegex = null;");
         sb.AppendLine("  window._scriptPoiRegex = null;");
         sb.AppendLine("  window._scriptSymbolRegex = null;");
@@ -644,6 +646,10 @@ public sealed class HtmxBotWindow : IAppUi
         sb.AppendLine("          if (stream.sol()) state.lineStart = true;");
         sb.AppendLine("          if (stream.eatSpace()) return null;");
         sb.AppendLine("          if (state.lineStart && window._scriptCommandRegex && stream.match(window._scriptCommandRegex, true, true)) {");
+        sb.AppendLine("            state.lineStart = false;");
+        sb.AppendLine("            return 'keyword';");
+        sb.AppendLine("          }");
+        sb.AppendLine("          if (state.lineStart && window._scriptKeywordRegex && stream.match(window._scriptKeywordRegex, true, true)) {");
         sb.AppendLine("            state.lineStart = false;");
         sb.AppendLine("            return 'keyword';");
         sb.AppendLine("          }");
