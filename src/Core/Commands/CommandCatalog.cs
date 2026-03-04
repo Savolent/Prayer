@@ -13,7 +13,6 @@ public static class CommandCatalog
         new AbandonMissionCommand(),
         new DockCommand(),
         new RepairCommand(),
-        new HaltCommand(),
     };
 
     public static IReadOnlyList<ICommand> Trade { get; } = new List<ICommand>
@@ -28,7 +27,6 @@ public static class CommandCatalog
         new WithdrawItemsCommand(),
         new DepositItemsCommand(),
         new ExitCommand(),
-        new HaltCommand(),
     };
 
     public static IReadOnlyList<ICommand> Hangar { get; } = new List<ICommand>
@@ -40,7 +38,6 @@ public static class CommandCatalog
         new AcceptMissionCommand(),
         new AbandonMissionCommand(),
         new ExitCommand(),
-        new HaltCommand(),
     };
 
     public static IReadOnlyList<ICommand> Shipyard { get; } = new List<ICommand>
@@ -57,7 +54,6 @@ public static class CommandCatalog
         new ListShipForSaleCommand(),
         new ShipCatalogCommand(),
         new ExitCommand(),
-        new HaltCommand(),
     };
 
     public static IReadOnlyList<ICommand> ShipCatalog { get; } = new List<ICommand>
@@ -66,7 +62,6 @@ public static class CommandCatalog
         new NextPageCommand(),
         new LastPageCommand(),
         new ExitCommand(),
-        new HaltCommand(),
     };
 
     public static IReadOnlyList<ICommand> All { get; } = Space

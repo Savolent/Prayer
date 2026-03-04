@@ -42,6 +42,8 @@ public sealed record DslRepeatAstNode(IReadOnlyList<DslAstNode> Body, int Source
 
 public static class DslParser
 {
+    private const string HaltKeyword = "halt";
+
     private static readonly IReadOnlyDictionary<string, string[]> PromptArgNameOverrides =
         new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase)
         {
@@ -398,6 +400,7 @@ public static class DslParser
         var commandSignatures = entries
             .Select(e => BuildPromptCommandSignature(e.Command.Name, e.Syntax))
             .ToList();
+        commandSignatures.Add("halt;");
 
         var sb = new StringBuilder();
         sb.AppendLine("DSL command reference (terminate commands with ;):");
@@ -532,7 +535,8 @@ public static class DslParser
         }
 
         sb.AppendLine("repeat_stmt ::= \"repeat\" ws \"{\" ws statement* ws \"}\"");
-        sb.AppendLine($"statement ::= {string.Join(" | ", statementRules)} | repeat_stmt");
+        sb.AppendLine("halt_stmt ::= \"halt\" ws \";\"");
+        sb.AppendLine($"statement ::= {string.Join(" | ", statementRules)} | repeat_stmt | halt_stmt");
         sb.AppendLine("script ::= (ws statement)*");
         sb.AppendLine();
     }
@@ -752,6 +756,9 @@ public static class DslParser
         IReadOnlyList<string>? commandArgs)
     {
         var normalized = commandName.ToLowerInvariant();
+        if (normalized == HaltKeyword)
+            return commandArgs == null || commandArgs.Count == 0;
+
         if (CommandNameSet.Contains(normalized))
             return true;
 

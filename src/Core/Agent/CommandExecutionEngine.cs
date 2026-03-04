@@ -173,6 +173,13 @@ public sealed class CommandExecutionEngine
             state,
             phase: "start");
 
+        if (string.Equals(result.Action, "halt", StringComparison.OrdinalIgnoreCase))
+        {
+            message = "Halting autonomous execution. Waiting for user input.";
+            shouldAddMemory = true;
+            Halt("Halted: waiting for user input");
+        }
+        else
         if (_commandMap.TryGetValue(result.Action, out var command))
         {
             if (command is IMultiTurnCommand multiTurnCommand)
