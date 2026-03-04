@@ -100,15 +100,8 @@ class Program
             scriptExampleRag = new PromptScriptRag(openAiApiKey, openAiEmbeddingModel);
         }
 
-        var uiMode = (Environment.GetEnvironmentVariable("UI_MODE") ?? "htmx")
-            .Trim()
-            .ToLowerInvariant();
-        IAppUi ui = uiMode switch
-        {
-            "htmx" or "web" => new HtmxBotWindow(
-                Environment.GetEnvironmentVariable("UI_PREFIX") ?? "http://localhost:5057/"),
-            _ => new BotWindow()
-        };
+        IAppUi ui = new HtmxBotWindow(
+            Environment.GetEnvironmentVariable("UI_PREFIX") ?? "http://localhost:5057/");
         var orderedProviderIds = new List<string> { "openai", "groq", "llamacpp" };
         foreach (var providerId in providersById.Keys)
         {
