@@ -41,11 +41,11 @@ public sealed class AgentUiStateBuilder : IAgentUiStateBuilder
     {
         var prices = state.BuildEstimatedItemPrices();
         var cargo = GameState.StripMarkdown(GameState.FormatCargo(state.Cargo, prices));
-        var storage = state.Shared.StorageItems != null && state.Shared.StorageItems.Count > 0
-            ? GameState.StripMarkdown(GameState.FormatCargo(state.Shared.StorageItems, prices))
+        var storage = state.StorageItems != null && state.StorageItems.Count > 0
+            ? GameState.StripMarkdown(GameState.FormatCargo(state.StorageItems, prices))
             : "";
         var economy = GameState.StripMarkdown(
-            GameState.FormatEconomy(state.Shared.EconomyDeals, state.Shared.OwnBuyOrders, state.Shared.OwnSellOrders));
+            GameState.FormatEconomy(state.EconomyDeals, state.OwnBuyOrders, state.OwnSellOrders));
         var storageSection = string.IsNullOrWhiteSpace(storage)
             ? ""
             : $"\nSTORAGE\n{storage}\n";
@@ -54,7 +54,7 @@ public sealed class AgentUiStateBuilder : IAgentUiStateBuilder
 $@"CONTEXT: TRADE TERMINAL
 STATION: {state.CurrentPOI.Id}
 CREDITS: {state.Credits}
-STATION CREDITS: {state.Shared.StorageCredits}
+STATION CREDITS: {state.StorageCredits}
 FUEL: {state.Fuel}/{state.MaxFuel}
 CARGO: {state.CargoUsed}/{state.CargoCapacity}
 
@@ -82,7 +82,7 @@ ECONOMY
 $@"CONTEXT: SHIPYARD
 STATION: {state.CurrentPOI.Id}
 CREDITS: {state.Credits}
-STATION CREDITS: {state.Shared.StorageCredits}
+STATION CREDITS: {state.StorageCredits}
 FUEL: {state.Fuel}/{state.MaxFuel}
 CARGO: {state.CargoUsed}/{state.CargoCapacity}
 

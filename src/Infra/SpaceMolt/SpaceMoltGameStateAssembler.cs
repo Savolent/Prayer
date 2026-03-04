@@ -127,7 +127,6 @@ internal sealed class SpaceMoltGameStateAssembler
             MaxShield = ship.GetProperty("max_shield").GetInt32(),
             CargoUsed = ship.GetProperty("cargo_used").GetInt32(),
             CargoCapacity = ship.GetProperty("cargo_capacity").GetInt32(),
-            Shared = new SharedGameState(),
             Notifications = Array.Empty<GameNotification>(),
             ChatMessages = Array.Empty<GameChatMessage>()
         };
@@ -220,23 +219,21 @@ internal sealed class SpaceMoltGameStateAssembler
                 state.ShipCatalogue = new Catalogue();
             }
 
-            state.Shared.StorageCredits = stationInfo.StorageCredits;
-            state.Shared.StorageItems = SpaceMoltMarketAnalytics.CloneItems(stationInfo.StorageItems);
-            state.Shared.Market = SpaceMoltMarketAnalytics.CloneMarket(stationInfo.Market);
-            state.Shared.EconomyDeals = _owner.BuildBestDealsForCurrentStation(stationId, maxDeals: 3);
-            state.Shared.OwnBuyOrders = stationInfo.BuyOrders.ToArray();
-            state.Shared.OwnSellOrders = stationInfo.SellOrders.ToArray();
+            state.StorageCredits = stationInfo.StorageCredits;
+            state.StorageItems = SpaceMoltMarketAnalytics.CloneItems(stationInfo.StorageItems);
+            state.EconomyDeals = _owner.BuildBestDealsForCurrentStation(stationId, maxDeals: 3);
+            state.OwnBuyOrders = stationInfo.BuyOrders.ToArray();
+            state.OwnSellOrders = stationInfo.SellOrders.ToArray();
             state.ShipyardShowroomLines = stationInfo.ShipyardShowroomLines ?? Array.Empty<string>();
             state.ShipyardListingLines = stationInfo.ShipyardListingLines ?? Array.Empty<string>();
         }
         else
         {
-            state.Shared.StorageCredits = 0;
-            state.Shared.StorageItems = new Dictionary<string, ItemStack>();
-            state.Shared.Market = null;
-            state.Shared.EconomyDeals = Array.Empty<EconomyDeal>();
-            state.Shared.OwnBuyOrders = Array.Empty<OpenOrderInfo>();
-            state.Shared.OwnSellOrders = Array.Empty<OpenOrderInfo>();
+            state.StorageCredits = 0;
+            state.StorageItems = new Dictionary<string, ItemStack>();
+            state.EconomyDeals = Array.Empty<EconomyDeal>();
+            state.OwnBuyOrders = Array.Empty<OpenOrderInfo>();
+            state.OwnSellOrders = Array.Empty<OpenOrderInfo>();
             state.ShipyardShowroomLines = Array.Empty<string>();
             state.ShipyardListingLines = Array.Empty<string>();
             state.ShipCatalogue = new Catalogue();
@@ -245,15 +242,6 @@ internal sealed class SpaceMoltGameStateAssembler
         GalaxyStateHub.MergeMarkets(stationCache.Values.Select(s => s.Market));
         var galaxySnapshot = GalaxyStateHub.Snapshot();
         state.Galaxy = galaxySnapshot;
-        state.Shared.GlobalMedianBuyPrices = new Dictionary<string, decimal>(
-            galaxySnapshot.Market.GlobalMedianBuyPrices,
-            StringComparer.Ordinal);
-        state.Shared.GlobalMedianSellPrices = new Dictionary<string, decimal>(
-            galaxySnapshot.Market.GlobalMedianSellPrices,
-            StringComparer.Ordinal);
-        state.Shared.GlobalWeightedMidPrices = new Dictionary<string, decimal>(
-            galaxySnapshot.Market.GlobalWeightedMidPrices,
-            StringComparer.Ordinal);
 
         var ownedShipsResult = await _owner.ExecuteAsync("list_ships");
         state.OwnedShips = SpaceMoltResponseParsers.TryParseOwnedShips(ownedShipsResult, out var ownedShips)

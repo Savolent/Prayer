@@ -15,8 +15,8 @@ public class CancelBuyCommand : AutoDockSingleTurnCommand, IDslCommandGrammar
     protected override bool IsAvailableWhenDocked(GameState state)
     {
         return state.Docked &&
-               state.Shared.OwnBuyOrders != null &&
-               state.Shared.OwnBuyOrders.Any(o => !string.IsNullOrWhiteSpace(o.OrderId));
+               state.OwnBuyOrders != null &&
+               state.OwnBuyOrders.Any(o => !string.IsNullOrWhiteSpace(o.OrderId));
     }
 
     public override string BuildHelp(GameState state)
@@ -31,7 +31,7 @@ public class CancelBuyCommand : AutoDockSingleTurnCommand, IDslCommandGrammar
             return new CommandExecutionResult { ResultMessage = "Usage: cancel_buy <itemId>." };
 
         var targetItem = cmd.Arg1.Trim();
-        var orders = state.Shared.OwnBuyOrders
+        var orders = state.OwnBuyOrders
             .Where(o =>
                 !string.IsNullOrWhiteSpace(o.OrderId) &&
                 string.Equals(o.ItemId, targetItem, StringComparison.Ordinal))

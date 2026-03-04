@@ -35,8 +35,12 @@ public class GameState
 
     public POIInfo[] POIs { get; set; } = Array.Empty<POIInfo>();
     public string[] Systems { get; set; } = Array.Empty<string>();
-    public SharedGameState Shared { get; set; } = new();
     public GalaxyState Galaxy { get; set; } = new();
+    public int StorageCredits { get; set; }
+    public Dictionary<string, ItemStack> StorageItems { get; set; } = new();
+    public EconomyDeal[] EconomyDeals { get; set; } = Array.Empty<EconomyDeal>();
+    public OpenOrderInfo[] OwnBuyOrders { get; set; } = Array.Empty<OpenOrderInfo>();
+    public OpenOrderInfo[] OwnSellOrders { get; set; } = Array.Empty<OpenOrderInfo>();
     public Dictionary<string, ItemStack> Cargo { get; set; }
         = new Dictionary<string, ItemStack>();
 
@@ -71,6 +75,21 @@ public class GameState
     public int CargoCapacity { get; set; }
     public GameNotification[] Notifications { get; set; } = Array.Empty<GameNotification>();
     public GameChatMessage[] ChatMessages { get; set; } = Array.Empty<GameChatMessage>();
+    public MarketState? CurrentMarket
+    {
+        get
+        {
+            if (!Docked || !CurrentPOI.IsStation)
+                return null;
+
+            if (Galaxy?.Market?.MarketsByStation == null)
+                return null;
+
+            return Galaxy.Market.MarketsByStation.TryGetValue(CurrentPOI.Id, out var market)
+                ? market
+                : null;
+        }
+    }
 
     public int GetQuantity(string itemId)
     {
@@ -87,11 +106,11 @@ public class GameState
     private RenderData BuildRenderData()
     {
         var estimatedPrices = BuildEstimatedItemPrices();
-        var storageItemsSection = Docked && Shared.StorageItems != null && Shared.StorageItems.Count > 0
-            ? $"\n### Storage Items\n{FormatCargo(Shared.StorageItems, estimatedPrices)}\n"
+        var storageItemsSection = Docked && StorageItems != null && StorageItems.Count > 0
+            ? $"\n### Storage Items\n{FormatCargo(StorageItems, estimatedPrices)}\n"
             : "";
         var economySection = Docked && CurrentPOI.IsStation
-            ? $"\n### Economy\n{FormatEconomy(Shared.EconomyDeals, Shared.OwnBuyOrders, Shared.OwnSellOrders)}\n"
+            ? $"\n### Economy\n{FormatEconomy(EconomyDeals, OwnBuyOrders, OwnSellOrders)}\n"
             : "";
 
         int fuelPct = MaxFuel > 0 ? (Fuel * 100) / MaxFuel : 0;
@@ -181,10 +200,10 @@ public class GameState
     {
         var estimatedPrices = BuildEstimatedItemPrices();
         var cargo = FormatCargo(Cargo, estimatedPrices);
-        var storage = Shared.StorageItems != null && Shared.StorageItems.Count > 0
-            ? FormatCargo(Shared.StorageItems, estimatedPrices)
+        var storage = StorageItems != null && StorageItems.Count > 0
+            ? FormatCargo(StorageItems, estimatedPrices)
             : "";
-        var economy = FormatEconomy(Shared.EconomyDeals, Shared.OwnBuyOrders, Shared.OwnSellOrders);
+        var economy = FormatEconomy(EconomyDeals, OwnBuyOrders, OwnSellOrders);
 
         var storageSection = string.IsNullOrWhiteSpace(storage)
             ? ""
@@ -321,7 +340,7 @@ Current POI Online: {CurrentPOI.Online}
     {
         var r = BuildRenderData();
         string stationCreditsLine = Docked
-            ? $"\nSTATION CREDITS: {Shared.StorageCredits}"
+            ? $"\nSTATION CREDITS: {StorageCredits}"
             : "";
 
         return
@@ -423,7 +442,7 @@ CARGO
         var itemIds = new HashSet<string>(StringComparer.Ordinal);
         foreach (var item in Cargo.Keys)
             itemIds.Add(item);
-        foreach (var item in Shared.StorageItems.Keys)
+        foreach (var item in StorageItems.Keys)
             itemIds.Add(item);
 
         foreach (var itemId in itemIds)
@@ -451,13 +470,13 @@ CARGO
                 continue;
             }
 
-            if (Shared.GlobalMedianBuyPrices.TryGetValue(itemId, out var fallbackBuy) && fallbackBuy > 0m)
+            if (Galaxy.Market.GlobalMedianBuyPrices.TryGetValue(itemId, out var fallbackBuy) && fallbackBuy > 0m)
             {
                 prices[itemId] = fallbackBuy;
                 continue;
             }
 
-            if (Shared.GlobalMedianSellPrices.TryGetValue(itemId, out var fallbackSell) && fallbackSell > 0m)
+            if (Galaxy.Market.GlobalMedianSellPrices.TryGetValue(itemId, out var fallbackSell) && fallbackSell > 0m)
             {
                 prices[itemId] = fallbackSell;
             }
@@ -468,10 +487,10 @@ CARGO
 
     private decimal? EstimateFromLocalBuyOrders(string itemId)
     {
-        if (Shared.Market == null)
+        if (CurrentMarket == null)
             return null;
 
-        Shared.Market.BuyOrders.TryGetValue(itemId, out var bids);
+        CurrentMarket.BuyOrders.TryGetValue(itemId, out var bids);
         if (bids != null && bids.Count > 0)
         {
             decimal? highestBid = bids
@@ -489,10 +508,10 @@ CARGO
 
     private decimal? EstimateFromLocalLowestAsk(string itemId)
     {
-        if (Shared.Market == null)
+        if (CurrentMarket == null)
             return null;
 
-        if (!Shared.Market.SellOrders.TryGetValue(itemId, out var asks) ||
+        if (!CurrentMarket.SellOrders.TryGetValue(itemId, out var asks) ||
             asks == null ||
             asks.Count == 0)
         {
@@ -513,15 +532,15 @@ CARGO
 
     private decimal? EstimateFromLocalMarket(string itemId)
     {
-        if (Shared.Market == null)
+        if (CurrentMarket == null)
             return null;
 
-        Shared.Market.BuyOrders.TryGetValue(itemId, out var bids);
+        CurrentMarket.BuyOrders.TryGetValue(itemId, out var bids);
         decimal? bidMedian = ComputeMedianPriceFromOrders(bids);
         if (bidMedian.HasValue && bidMedian.Value > 0m)
             return bidMedian;
 
-        if (Shared.Market.SellOrders.TryGetValue(itemId, out var asks) &&
+        if (CurrentMarket.SellOrders.TryGetValue(itemId, out var asks) &&
             asks != null &&
             asks.Count > 0)
         {

@@ -17,7 +17,8 @@ public class BuyCommand : AutoDockSingleTurnCommand, IDslCommandGrammar
 
     protected override bool IsAvailableWhenDocked(GameState state)
     {
-        if (!state.Docked || state.Shared.Market == null)
+        var market = state.CurrentMarket;
+        if (!state.Docked || market == null)
             return false;
 
         if (state.Credits <= 0)
@@ -26,7 +27,7 @@ public class BuyCommand : AutoDockSingleTurnCommand, IDslCommandGrammar
         if (state.CargoCapacity - state.CargoUsed <= 0)
             return false;
 
-        return state.Shared.Market.SellOrders.Any(kvp => kvp.Value.Count > 0);
+        return market.SellOrders.Any(kvp => kvp.Value.Count > 0);
     }
 
     public override string BuildHelp(GameState state)
@@ -37,15 +38,16 @@ public class BuyCommand : AutoDockSingleTurnCommand, IDslCommandGrammar
         CommandResult cmd,
         GameState state)
     {
-        if (!state.Docked || state.Shared.Market == null || string.IsNullOrWhiteSpace(cmd.Arg1))
+        var market = state.CurrentMarket;
+        if (!state.Docked || market == null || string.IsNullOrWhiteSpace(cmd.Arg1))
             return null;
 
         int requested = cmd.Quantity ?? 1;
         if (requested <= 0)
             requested = 1;
 
-        if (!state.Shared.Market.SellOrders.TryGetValue(cmd.Arg1, out var sellOrders) &&
-            !state.Shared.Market.BuyOrders.TryGetValue(cmd.Arg1, out _))
+        if (!market.SellOrders.TryGetValue(cmd.Arg1, out var sellOrders) &&
+            !market.BuyOrders.TryGetValue(cmd.Arg1, out _))
         {
             return new CommandExecutionResult
             {
@@ -76,7 +78,7 @@ public class BuyCommand : AutoDockSingleTurnCommand, IDslCommandGrammar
             : null;
 
         decimal? highestBuyPrice = null;
-        if (state.Shared.Market.BuyOrders.TryGetValue(cmd.Arg1, out var buyOrders) &&
+        if (market.BuyOrders.TryGetValue(cmd.Arg1, out var buyOrders) &&
             buyOrders.Count > 0)
         {
             highestBuyPrice = buyOrders.Max(o => o.PriceEach);
@@ -178,7 +180,7 @@ public class BuyCommand : AutoDockSingleTurnCommand, IDslCommandGrammar
         }
 
         // No structured order id in the error payload: infer conflicts from current open sell orders.
-        var fallback = state.Shared.OwnSellOrders
+        var fallback = state.OwnSellOrders
             .Where(o =>
                 string.Equals(o.ItemId, itemId, StringComparison.Ordinal) &&
                 o.PriceEach <= buyPrice &&

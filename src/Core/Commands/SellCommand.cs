@@ -22,7 +22,7 @@ public class SellCommand : AutoDockMultiTurnCommand, IDslCommandGrammar
 
     protected override bool IsAvailableWhenDocked(GameState state)
     {
-        if (!state.Docked || state.Shared.Market == null)
+        if (!state.Docked || state.CurrentMarket == null)
             return false;
 
         return state.Cargo.Any(kvp => kvp.Value.Quantity > 0 && IsSellable(state, kvp.Key));
@@ -99,8 +99,8 @@ public class SellCommand : AutoDockMultiTurnCommand, IDslCommandGrammar
     private static bool IsSellable(GameState state, string item)
     {
         return
-            (state.Shared.Market!.SellOrders.TryGetValue(item, out var sells) && sells.Count > 0) ||
-            (state.Shared.Market.BuyOrders.TryGetValue(item, out var buys) && buys.Count > 0);
+            (state.CurrentMarket!.SellOrders.TryGetValue(item, out var sells) && sells.Count > 0) ||
+            (state.CurrentMarket.BuyOrders.TryGetValue(item, out var buys) && buys.Count > 0);
     }
 
     private async Task<CommandExecutionResult?> SellOneAsync(
@@ -114,20 +114,20 @@ public class SellCommand : AutoDockMultiTurnCommand, IDslCommandGrammar
         if (stack.Quantity <= 0)
             return null;
 
-        var buyOrders = state.Shared.Market!.BuyOrders.TryGetValue(item, out var bids)
+        var buyOrders = state.CurrentMarket!.BuyOrders.TryGetValue(item, out var bids)
             ? bids
             : new List<MarketOrder>();
-        var sellOrders = state.Shared.Market.SellOrders.TryGetValue(item, out var asks)
+        var sellOrders = state.CurrentMarket.SellOrders.TryGetValue(item, out var asks)
             ? asks
             : new List<MarketOrder>();
 
-        var filteredBuyOrders = ExcludeOwnOrders(buyOrders, state.Shared.OwnBuyOrders, item);
-        var filteredSellOrders = ExcludeOwnOrders(sellOrders, state.Shared.OwnSellOrders, item);
+        var filteredBuyOrders = ExcludeOwnOrders(buyOrders, state.OwnBuyOrders, item);
+        var filteredSellOrders = ExcludeOwnOrders(sellOrders, state.OwnSellOrders, item);
 
         var targetPrice = ComputeTargetSellPrice(
             filteredBuyOrders,
             filteredSellOrders,
-            state.Shared.GlobalWeightedMidPrices.TryGetValue(item, out var globalMid) ? globalMid : null);
+            state.Galaxy.Market.GlobalWeightedMidPrices.TryGetValue(item, out var globalMid) ? globalMid : null);
         if (!targetPrice.HasValue)
             return null;
 

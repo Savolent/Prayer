@@ -298,16 +298,16 @@ public sealed class BotRuntime
 
     private async Task<GameState> TryAutoWithdrawStationCreditsAsync(GameState state)
     {
-        if (state.Shared.StorageCredits <= 0)
+        if (state.StorageCredits <= 0)
             return state;
 
-        int storageCreditsBefore = state.Shared.StorageCredits;
+        int storageCreditsBefore = state.StorageCredits;
 
         try
         {
             await _client.ExecuteAsync("withdraw_credits", new { amount = storageCreditsBefore });
             var refreshed = _client.GetGameState();
-            int withdrawn = Math.Max(0, storageCreditsBefore - refreshed.Shared.StorageCredits);
+            int withdrawn = Math.Max(0, storageCreditsBefore - refreshed.StorageCredits);
 
             if (withdrawn > 0)
                 _publishStatus($"[{_label}] Auto-withdrew {withdrawn} station credits");

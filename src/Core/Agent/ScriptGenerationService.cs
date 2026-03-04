@@ -302,9 +302,9 @@ public sealed class ScriptGenerationService
         foreach (var itemId in state.Cargo.Keys)
             AddPromptAlias(aliases, itemId, itemId);
 
-        if (state.Shared.StorageItems != null)
+        if (state.StorageItems != null)
         {
-            foreach (var itemId in state.Shared.StorageItems.Keys)
+            foreach (var itemId in state.StorageItems.Keys)
                 AddPromptAlias(aliases, itemId, itemId);
         }
 

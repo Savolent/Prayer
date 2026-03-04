@@ -16,7 +16,7 @@ public class WithdrawItemsCommand : AutoDockSingleTurnCommand, IDslCommandGramma
 
     protected override bool IsAvailableWhenDocked(GameState state)
         => state.Docked &&
-           state.Shared.StorageItems.Count > 0 &&
+           state.StorageItems.Count > 0 &&
            state.CargoUsed < state.CargoCapacity;
 
     public override string BuildHelp(GameState state)
@@ -30,7 +30,7 @@ public class WithdrawItemsCommand : AutoDockSingleTurnCommand, IDslCommandGramma
         if (!state.Docked || string.IsNullOrWhiteSpace(cmd.Arg1))
             return null;
 
-        if (!state.Shared.StorageItems.TryGetValue(cmd.Arg1, out var stack) || stack.Quantity <= 0)
+        if (!state.StorageItems.TryGetValue(cmd.Arg1, out var stack) || stack.Quantity <= 0)
             return null;
 
         int cargoFree = Math.Max(0, state.CargoCapacity - state.CargoUsed);
