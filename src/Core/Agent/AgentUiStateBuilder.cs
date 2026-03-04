@@ -1,14 +1,25 @@
 using System;
+using System.Linq;
 
 public interface IAgentUiStateBuilder
 {
-    (string SpaceStateMarkdown, string? TradeStateMarkdown, string? ShipyardStateMarkdown, string? CantinaStateMarkdown)
+    (
+        string SpaceStateMarkdown,
+        string? TradeStateMarkdown,
+        string? ShipyardStateMarkdown,
+        string? CantinaStateMarkdown,
+        string? CatalogStateMarkdown)
         BuildUiState(GameState state);
 }
 
 public sealed class AgentUiStateBuilder : IAgentUiStateBuilder
 {
-    public (string SpaceStateMarkdown, string? TradeStateMarkdown, string? ShipyardStateMarkdown, string? CantinaStateMarkdown)
+    public (
+        string SpaceStateMarkdown,
+        string? TradeStateMarkdown,
+        string? ShipyardStateMarkdown,
+        string? CantinaStateMarkdown,
+        string? CatalogStateMarkdown)
         BuildUiState(GameState state)
     {
         var spaceState = state.ToDisplayText();
@@ -21,8 +32,9 @@ public sealed class AgentUiStateBuilder : IAgentUiStateBuilder
         var cantinaState = state.Docked && state.CurrentPOI.IsStation
             ? BuildCantinaUiState(state)
             : null;
+        var catalogState = BuildCatalogUiState(state);
 
-        return (spaceState, tradeState, shipyardState, cantinaState);
+        return (spaceState, tradeState, shipyardState, cantinaState, catalogState);
     }
 
     private static string BuildTradeUiState(GameState state)
@@ -112,5 +124,52 @@ ACTIVE MISSIONS
 
 AVAILABLE MISSIONS
 {availableMissions}{state.BuildNotificationsDisplaySection()}";
+    }
+
+    private static string BuildCatalogUiState(GameState state)
+    {
+        var items = state.Galaxy.Catalog.ItemsById.Values
+            .OrderBy(i => i.Name, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(i => i.Id, StringComparer.Ordinal)
+            .ToList();
+        var ships = state.Galaxy.Catalog.ShipsById.Values
+            .OrderBy(s => s.Name, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(s => s.Id, StringComparer.Ordinal)
+            .ToList();
+
+        string RenderItem(CatalogueEntry e)
+        {
+            var price = e.Price.HasValue ? $" | Price: {e.Price.Value:0}" : "";
+            var category = string.IsNullOrWhiteSpace(e.Category) ? "" : $" | Category: {e.Category}";
+            var tier = e.Tier.HasValue ? $" | Tier: {e.Tier.Value}" : "";
+            return $"- {e.Id} ({e.Name}){category}{tier}{price}";
+        }
+
+        string RenderShip(CatalogueEntry e)
+        {
+            var classId = string.IsNullOrWhiteSpace(e.ClassId) ? e.Class : e.ClassId;
+            var classPart = string.IsNullOrWhiteSpace(classId) ? "" : $" | Class: {classId}";
+            var hull = e.Hull ?? e.BaseHull;
+            var shield = e.Shield ?? e.BaseShield;
+            var cargo = e.Cargo ?? e.CargoCapacity;
+            var speed = e.Speed ?? e.BaseSpeed;
+            var stats = $" | Hull: {hull?.ToString() ?? "-"} | Shield: {shield?.ToString() ?? "-"} | Cargo: {cargo?.ToString() ?? "-"} | Speed: {speed?.ToString() ?? "-"}";
+            var price = e.Price.HasValue ? $" | Price: {e.Price.Value:0}" : "";
+            return $"- {e.Id} ({e.Name}){classPart}{stats}{price}";
+        }
+
+        var itemLines = items.Select(RenderItem).ToList();
+        var shipLines = ships.Select(RenderShip).ToList();
+        if (itemLines.Count == 0)
+            itemLines.Add("- (no item catalog entries)");
+        if (shipLines.Count == 0)
+            shipLines.Add("- (no ship catalog entries)");
+
+        return
+$@"ITEMS
+{string.Join("\n", itemLines)}
+
+SHIPS
+{string.Join("\n", shipLines)}";
     }
 }

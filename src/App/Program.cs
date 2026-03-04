@@ -730,6 +730,7 @@ class Program
                         snapshot.TradeStateMarkdown,
                         snapshot.ShipyardStateMarkdown,
                         snapshot.CantinaStateMarkdown,
+                        snapshot.CatalogStateMarkdown,
                         snapshot.ActiveMissionPrompts,
                         snapshot.Memory,
                         snapshot.ExecutionStatusLines,

@@ -22,6 +22,7 @@ public interface IAppUi
         string? tradeStateMarkdown,
         string? shipyardStateMarkdown,
         string? cantinaStateMarkdown,
+        string? catalogStateMarkdown,
         IReadOnlyList<MissionPromptOption> activeMissionPrompts,
         IReadOnlyList<string> memory,
         IReadOnlyList<string> executionStatusLines,

@@ -33,6 +33,7 @@ public sealed class HtmxBotWindow : IAppUi
         null,
         null,
         null,
+        null,
         Array.Empty<MissionPromptOption>(),
         Array.Empty<string>(),
         Array.Empty<string>(),
@@ -123,6 +124,7 @@ public sealed class HtmxBotWindow : IAppUi
         string? tradeStateMarkdown,
         string? shipyardStateMarkdown,
         string? cantinaStateMarkdown,
+        string? catalogStateMarkdown,
         IReadOnlyList<MissionPromptOption> activeMissionPrompts,
         IReadOnlyList<string> memory,
         IReadOnlyList<string> executionStatusLines,
@@ -140,6 +142,7 @@ public sealed class HtmxBotWindow : IAppUi
                 tradeStateMarkdown,
                 shipyardStateMarkdown,
                 cantinaStateMarkdown,
+                catalogStateMarkdown,
                 activeMissionPrompts,
                 memory,
                 executionStatusLines,
@@ -217,7 +220,8 @@ public sealed class HtmxBotWindow : IAppUi
 
         if (req.HttpMethod == "GET" && path == "/partial/state")
         {
-            WriteText(ctx.Response, BuildStateHtml(), "text/html; charset=utf-8");
+            var tab = req.QueryString["tab"];
+            WriteText(ctx.Response, BuildStateHtml(tab), "text/html; charset=utf-8");
             return;
         }
 
@@ -406,6 +410,21 @@ public sealed class HtmxBotWindow : IAppUi
         sb.AppendLine("pre { margin:0; white-space:pre-wrap; word-break:break-word; }");
         sb.AppendLine("textarea, select, input, button { width:100%; box-sizing:border-box; background:#0f1115; color:#d7dae0; border:1px solid #2a2e38; border-radius:6px; padding:6px; }");
         sb.AppendLine("button { cursor:pointer; } .row { display:flex; gap:8px; } .row > * { flex:1; } .small { font-size:12px; color:#9ca3b2; } .list { display:flex; flex-direction:column; gap:6px; } .active { border-color:#5ac977; }");
+        sb.AppendLine(".tabs { display:flex; gap:6px; margin-bottom:8px; }");
+        sb.AppendLine(".tab-btn { width:auto; flex:1; background:#0f1115; border:1px solid #2a2e38; color:#d7dae0; border-radius:6px; padding:6px 8px; font-size:12px; }");
+        sb.AppendLine(".tab-btn.active { border-color:#5ac977; color:#e8ffef; }");
+        sb.AppendLine(".tab-pane { display:none; }");
+        sb.AppendLine(".tab-pane.active { display:block; }");
+        sb.AppendLine(".catalog-search { margin:0 0 8px 0; }");
+        sb.AppendLine("details.catalog-group { margin-bottom:8px; border:1px solid #2a2e38; border-radius:6px; padding:6px; background:#11141a; }");
+        sb.AppendLine("details.catalog-group > summary { cursor:pointer; color:#8eb8ff; }");
+        sb.AppendLine(".catalog-list { display:flex; flex-direction:column; gap:4px; margin-top:6px; }");
+        sb.AppendLine(".catalog-entry { white-space:pre-wrap; word-break:break-word; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }");
+        sb.AppendLine(".script-preview { margin-top:6px; border:1px solid #2a2e38; border-radius:6px; background:#0f1115; padding:6px; min-height:84px; white-space:pre-wrap; word-break:break-word; }");
+        sb.AppendLine(".script-code { white-space:pre-wrap; word-break:break-word; }");
+        sb.AppendLine(".tok-cmd { color:#7fd8ff; font-weight:600; }");
+        sb.AppendLine(".tok-semi { color:#ffd166; }");
+        sb.AppendLine(".tok-comment { color:#8a93a8; }");
         sb.AppendLine("#state-panel { overflow-y:auto; }");
         sb.AppendLine("#right-panel { overflow-y:auto; }");
         sb.AppendLine("</style></head><body><div class='app'><div class='grid'>");
@@ -428,11 +447,27 @@ public sealed class HtmxBotWindow : IAppUi
         sb.AppendLine("<input name='username' placeholder='username'><input name='password' placeholder='password'><input name='registration_code' placeholder='registration code'><input name='empire' placeholder='empire (for register)'>");
         sb.AppendLine("<button type='submit'>Add Bot</button></form></div>");
 
-        sb.AppendLine("<div id='state-panel' class='card' hx-get='/partial/state' hx-trigger='load, every 1000ms' hx-swap='innerHTML'></div>");
+        sb.AppendLine("<div id='state-panel' class='card'>");
+        sb.AppendLine("<h3>State</h3>");
+        sb.AppendLine("<div class='tabs'>");
+        sb.AppendLine("<button type='button' class='tab-btn active' data-tab='space'>Space</button>");
+        sb.AppendLine("<button type='button' class='tab-btn' data-tab='trade'>Trade</button>");
+        sb.AppendLine("<button type='button' class='tab-btn' data-tab='shipyard'>Shipyard</button>");
+        sb.AppendLine("<button type='button' class='tab-btn' data-tab='cantina'>Cantina</button>");
+        sb.AppendLine("<button type='button' class='tab-btn' data-tab='catalog'>Catalog</button>");
+        sb.AppendLine("</div>");
+        sb.AppendLine("<div id='state-pane-space' class='tab-pane active' hx-get='/partial/state?tab=space' hx-trigger='load, every 1000ms' hx-swap='innerHTML'></div>");
+        sb.AppendLine("<div id='state-pane-trade' class='tab-pane' hx-get='/partial/state?tab=trade' hx-trigger='load, every 1000ms' hx-swap='innerHTML'></div>");
+        sb.AppendLine("<div id='state-pane-shipyard' class='tab-pane' hx-get='/partial/state?tab=shipyard' hx-trigger='load, every 1000ms' hx-swap='innerHTML'></div>");
+        sb.AppendLine("<div id='state-pane-cantina' class='tab-pane' hx-get='/partial/state?tab=cantina' hx-trigger='load, every 1000ms' hx-swap='innerHTML'></div>");
+        sb.AppendLine("<div id='state-pane-catalog' class='tab-pane' hx-get='/partial/state?tab=catalog' hx-trigger='load' hx-swap='innerHTML'></div>");
+        sb.AppendLine("</div>");
 
         sb.AppendLine("<div class='card'><h3>Script</h3>");
         sb.AppendLine("<form hx-post='/api/control-input' hx-swap='none' class='list'>");
-        sb.Append("<textarea name='script' rows='7' placeholder='script'>").Append(E(currentScript)).AppendLine("</textarea>");
+        sb.Append("<textarea id='script-input' name='script' rows='7' placeholder='script'>").Append(E(currentScript)).AppendLine("</textarea>");
+        sb.AppendLine("<div class='small'>Preview</div>");
+        sb.AppendLine("<pre id='script-input-preview' class='script-preview script-code'></pre>");
         sb.AppendLine("<button type='submit'>Set Script</button></form>");
         sb.AppendLine(
             "<div class='row' style='margin-top:8px;'><form hx-post='/api/execute' hx-swap='none'><button type='submit' title='Execute'>▶️</button></form><form hx-post='/api/halt' hx-swap='none'><button type='submit' title='Halt'>⏹️</button></form><form hx-post='/api/save-example' hx-swap='none'><button type='submit' title='Thumbs Up'>👍</button></form><div id='loop-btn-slot' hx-get='/partial/loop-btn' hx-trigger='load, every 1000ms' hx-swap='innerHTML'>"
@@ -441,6 +476,61 @@ public sealed class HtmxBotWindow : IAppUi
         sb.AppendLine("<h4>Prompt</h4><form hx-post='/api/prompt' hx-swap='none' class='list'><textarea name='prompt' rows='4' placeholder='prompt for script generation'></textarea><button type='submit'>Generate Script</button></form>");
         sb.AppendLine("<div id='right-panel' hx-get='/partial/right' hx-trigger='load, every 1000ms' hx-swap='innerHTML'></div></div>");
 
+        sb.AppendLine("<script>");
+        sb.AppendLine("document.addEventListener('click', function (e) {");
+        sb.AppendLine("  var btn = e.target.closest('.tab-btn');");
+        sb.AppendLine("  if (!btn) return;");
+        sb.AppendLine("  var panel = document.getElementById('state-panel');");
+        sb.AppendLine("  if (!panel) return;");
+        sb.AppendLine("  var tab = btn.getAttribute('data-tab');");
+        sb.AppendLine("  panel.querySelectorAll('.tab-btn').forEach(function (b) { b.classList.toggle('active', b === btn); });");
+        sb.AppendLine("  panel.querySelectorAll('.tab-pane').forEach(function (p) { p.classList.remove('active'); });");
+        sb.AppendLine("  var target = document.getElementById('state-pane-' + tab);");
+        sb.AppendLine("  if (target) target.classList.add('active');");
+        sb.AppendLine("});");
+        sb.AppendLine("window.filterCatalogEntries = function (query) {");
+        sb.AppendLine("  var q = (query || '').toLowerCase().trim();");
+        sb.AppendLine("  document.querySelectorAll('#state-pane-catalog .catalog-entry').forEach(function (row) {");
+        sb.AppendLine("    var hay = row.getAttribute('data-search') || '';");
+        sb.AppendLine("    row.style.display = q === '' || hay.indexOf(q) >= 0 ? '' : 'none';");
+        sb.AppendLine("  });");
+        sb.AppendLine("};");
+        sb.AppendLine("window.highlightScriptText = function (text) {");
+        sb.AppendLine("  var escapeHtml = function (s) { return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); };");
+        sb.AppendLine("  return (text || '').replace(/\\r\\n/g, '\\n').split('\\n').map(function (line) {");
+        sb.AppendLine("    if (line.length === 0) return '';");
+        sb.AppendLine("    var indentMatch = line.match(/^\\s*/);");
+        sb.AppendLine("    var indent = indentMatch ? indentMatch[0] : '';");
+        sb.AppendLine("    var trimmed = line.slice(indent.length);");
+        sb.AppendLine("    if (trimmed.startsWith(';')) {");
+        sb.AppendLine("      return escapeHtml(indent) + \"<span class='tok-semi'>;</span><span class='tok-comment'>\" + escapeHtml(trimmed.slice(1)) + \"</span>\";");
+        sb.AppendLine("    }");
+        sb.AppendLine("    var m = trimmed.match(/^([A-Za-z_][A-Za-z0-9_]*)/);");
+        sb.AppendLine("    if (!m) {");
+        sb.AppendLine("      return escapeHtml(line).replace(/;/g, \"<span class='tok-semi'>;</span>\");");
+        sb.AppendLine("    }");
+        sb.AppendLine("    var cmd = m[1];");
+        sb.AppendLine("    var rest = trimmed.slice(cmd.length);");
+        sb.AppendLine("    return escapeHtml(indent) + \"<span class='tok-cmd'>\" + escapeHtml(cmd) + \"</span>\" + escapeHtml(rest).replace(/;/g, \"<span class='tok-semi'>;</span>\");");
+        sb.AppendLine("  }).join('\\n');");
+        sb.AppendLine("};");
+        sb.AppendLine("window.renderScriptHighlights = function () {");
+        sb.AppendLine("  var input = document.getElementById('script-input');");
+        sb.AppendLine("  var preview = document.getElementById('script-input-preview');");
+        sb.AppendLine("  if (input && preview) preview.innerHTML = window.highlightScriptText(input.value || '');");
+        sb.AppendLine("  document.querySelectorAll('pre.script-code.live-script').forEach(function (pre) {");
+        sb.AppendLine("    var raw = pre.getAttribute('data-raw');");
+        sb.AppendLine("    if (raw === null) {");
+        sb.AppendLine("      raw = pre.textContent || '';");
+        sb.AppendLine("      pre.setAttribute('data-raw', raw);");
+        sb.AppendLine("    }");
+        sb.AppendLine("    pre.innerHTML = window.highlightScriptText(raw);");
+        sb.AppendLine("  });");
+        sb.AppendLine("};");
+        sb.AppendLine("document.addEventListener('input', function (e) { if (e.target && e.target.id === 'script-input') window.renderScriptHighlights(); });");
+        sb.AppendLine("document.addEventListener('htmx:afterSwap', function () { window.renderScriptHighlights(); });");
+        sb.AppendLine("window.renderScriptHighlights();");
+        sb.AppendLine("</script>");
         sb.AppendLine("</div></div></body></html>");
         return sb.ToString();
     }
@@ -465,19 +555,94 @@ public sealed class HtmxBotWindow : IAppUi
         return sb.ToString();
     }
 
-    private string BuildStateHtml()
+    private string BuildStateHtml(string? tab)
     {
         UiSnapshot snapshot;
         lock (_lock) snapshot = _snapshot;
         var sb = new StringBuilder();
-        sb.AppendLine("<h3>State</h3><pre>").Append(E(snapshot.SpaceStateMarkdown)).AppendLine("</pre>");
-        if (!string.IsNullOrWhiteSpace(snapshot.TradeStateMarkdown))
-            sb.AppendLine("<h4>Trade</h4><pre>" + E(snapshot.TradeStateMarkdown!) + "</pre>");
-        if (!string.IsNullOrWhiteSpace(snapshot.ShipyardStateMarkdown))
-            sb.AppendLine("<h4>Shipyard</h4><pre>" + E(snapshot.ShipyardStateMarkdown!) + "</pre>");
-        if (!string.IsNullOrWhiteSpace(snapshot.CantinaStateMarkdown))
-            sb.AppendLine("<h4>Cantina</h4><pre>" + E(snapshot.CantinaStateMarkdown!) + "</pre>");
+        var normalizedTab = (tab ?? "space").Trim().ToLowerInvariant();
+        switch (normalizedTab)
+        {
+            case "trade":
+                sb.Append("<pre>").Append(E(snapshot.TradeStateMarkdown ?? "(trade unavailable)")).AppendLine("</pre>");
+                break;
+            case "shipyard":
+                sb.Append("<pre>").Append(E(snapshot.ShipyardStateMarkdown ?? "(shipyard unavailable)")).AppendLine("</pre>");
+                break;
+            case "cantina":
+                sb.Append("<pre>").Append(E(snapshot.CantinaStateMarkdown ?? "(cantina unavailable)")).AppendLine("</pre>");
+                break;
+            case "catalog":
+                AppendCatalogHtml(sb, snapshot.CatalogStateMarkdown);
+                break;
+            default:
+                sb.Append("<pre>").Append(E(snapshot.SpaceStateMarkdown)).AppendLine("</pre>");
+                break;
+        }
         return sb.ToString();
+    }
+
+    private void AppendCatalogHtml(StringBuilder sb, string? catalogState)
+    {
+        var raw = catalogState ?? "(catalog unavailable)";
+        var lines = raw.Replace("\r\n", "\n").Split('\n');
+
+        int itemsIndex = Array.IndexOf(lines, "ITEMS");
+        int shipsIndex = Array.IndexOf(lines, "SHIPS");
+
+        if (itemsIndex < 0 || shipsIndex < 0 || shipsIndex <= itemsIndex)
+        {
+            sb.Append("<pre>").Append(E(raw)).AppendLine("</pre>");
+            return;
+        }
+
+        var itemsBody = string.Join("\n", lines.Skip(itemsIndex + 1).Take(shipsIndex - itemsIndex - 1)).Trim();
+        var shipsBody = string.Join("\n", lines.Skip(shipsIndex + 1)).Trim();
+        var itemLines = itemsBody.Length == 0
+            ? Array.Empty<string>()
+            : itemsBody.Split('\n').Select(l => l.Trim()).Where(l => l.Length > 0).ToArray();
+        var shipLines = shipsBody.Length == 0
+            ? Array.Empty<string>()
+            : shipsBody.Split('\n').Select(l => l.Trim()).Where(l => l.Length > 0).ToArray();
+
+        sb.AppendLine("<input class='catalog-search' type='search' placeholder='Search catalog...' oninput='window.filterCatalogEntries(this.value)'>");
+        sb.AppendLine($"<details class='catalog-group' open><summary>Items ({itemLines.Length})</summary>");
+        sb.AppendLine("<div class='catalog-list'>");
+        if (itemLines.Length == 0)
+        {
+            sb.AppendLine("<div class='catalog-entry' data-search=''>- (no item catalog entries)</div>");
+        }
+        else
+        {
+            foreach (var line in itemLines)
+            {
+                sb.Append("<div class='catalog-entry' data-search='")
+                    .Append(E(line.ToLowerInvariant()))
+                    .Append("'>")
+                    .Append(E(line))
+                    .AppendLine("</div>");
+            }
+        }
+        sb.AppendLine("</div></details>");
+
+        sb.AppendLine($"<details class='catalog-group'><summary>Ships ({shipLines.Length})</summary>");
+        sb.AppendLine("<div class='catalog-list'>");
+        if (shipLines.Length == 0)
+        {
+            sb.AppendLine("<div class='catalog-entry' data-search=''>- (no ship catalog entries)</div>");
+        }
+        else
+        {
+            foreach (var line in shipLines)
+            {
+                sb.Append("<div class='catalog-entry' data-search='")
+                    .Append(E(line.ToLowerInvariant()))
+                    .Append("'>")
+                    .Append(E(line))
+                    .AppendLine("</div>");
+            }
+        }
+        sb.AppendLine("</div></details>");
     }
 
     private string BuildRightPanelHtml()
@@ -486,7 +651,7 @@ public sealed class HtmxBotWindow : IAppUi
         lock (_lock) snapshot = _snapshot;
         var sb = new StringBuilder();
         sb.AppendLine($"<div class='small'>Loop: {(snapshot.ActiveBotLoopEnabled ? "ON" : "OFF")}</div>");
-        sb.AppendLine("<h4>Current Script (live)</h4><pre>").Append(E(snapshot.ControlInput ?? "(none)")).AppendLine("</pre>");
+        sb.AppendLine("<h4>Current Script (live)</h4><pre class='script-code live-script'>").Append(E(snapshot.ControlInput ?? "(none)")).AppendLine("</pre>");
         if (snapshot.ActiveMissionPrompts.Count > 0)
         {
             sb.AppendLine("<h4>Mission Prompts</h4><pre>");

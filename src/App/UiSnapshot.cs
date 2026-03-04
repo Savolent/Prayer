@@ -5,6 +5,7 @@ public sealed record UiSnapshot(
     string? TradeStateMarkdown,
     string? ShipyardStateMarkdown,
     string? CantinaStateMarkdown,
+    string? CatalogStateMarkdown,
     IReadOnlyList<MissionPromptOption> ActiveMissionPrompts,
     IReadOnlyList<string> Memory,
     IReadOnlyList<string> ExecutionStatusLines,

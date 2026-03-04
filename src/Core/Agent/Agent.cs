@@ -148,7 +148,12 @@ public class SpaceMoltAgent
         return _execution.GetAvailableActions(state);
     }
 
-    public (string SpaceStateMarkdown, string? TradeStateMarkdown, string? ShipyardStateMarkdown, string? CantinaStateMarkdown)
+    public (
+        string SpaceStateMarkdown,
+        string? TradeStateMarkdown,
+        string? ShipyardStateMarkdown,
+        string? CantinaStateMarkdown,
+        string? CatalogStateMarkdown)
         BuildUiState(GameState state)
     {
         return _uiStateBuilder.BuildUiState(state);
