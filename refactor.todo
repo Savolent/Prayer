@@ -1,8 +1,3 @@
-Low: dead abstraction in GameContextMode
-BuildActionsBlock and ToLlmMarkdown are declared/implemented but unused outside GameModes.cs.
-GameModes.cs (line 9)
-GameModes.cs (line 12)
-
 Low: duplicated fuzzy-match logic (DRY smell)
 Near-identical token overlap + Levenshtein code exists in both Agent and DslFuzzyMatcher.
 Agent.cs (line 1372)

@@ -107,7 +107,7 @@ public sealed class BotRuntime
                                 generationInput,
                                 scriptState,
                                 maxAttempts: _scriptGenerationMaxAttempts);
-                            _agent.SetControlMode(ScriptMode.Instance, clearCurrentPlan: true);
+                            _agent.ActivateScriptControl();
                             _agent.SetScript(generatedScript, scriptState);
                         }
                         catch (FormatException ex)
@@ -181,30 +181,25 @@ public sealed class BotRuntime
                         }
                         catch (Exception ex)
                         {
-                            if (_agent.CurrentControlModeKind == ControlModeKind.ScriptMode)
+                            int failures = scriptStepFailureCounts.TryGetValue(stepKey, out var count)
+                                ? count + 1
+                                : 1;
+                            scriptStepFailureCounts[stepKey] = failures;
+
+                            if (failures < 3)
                             {
-                                int failures = scriptStepFailureCounts.TryGetValue(stepKey, out var count)
-                                    ? count + 1
-                                    : 1;
-                                scriptStepFailureCounts[stepKey] = failures;
-
-                                if (failures < 3)
-                                {
-                                    _agent.RequeueScriptStep(result);
-                                    _publishStatus($"[{_label}] Script step failed (attempt {failures}/3), retrying: {FormatCommand(result)} | {ex.Message}");
-                                }
-                                else
-                                {
-                                    scriptStepFailureCounts.Remove(stepKey);
-                                    _publishStatus($"[{_label}] Script step failed after 3 attempts, skipping: {FormatCommand(result)} | {ex.Message}");
-                                }
-
-                                _publishSnapshot(currentState);
-                                await Task.Delay(200, token);
-                                continue;
+                                _agent.RequeueScriptStep(result);
+                                _publishStatus($"[{_label}] Script step failed (attempt {failures}/3), retrying: {FormatCommand(result)} | {ex.Message}");
+                            }
+                            else
+                            {
+                                scriptStepFailureCounts.Remove(stepKey);
+                                _publishStatus($"[{_label}] Script step failed after 3 attempts, skipping: {FormatCommand(result)} | {ex.Message}");
                             }
 
-                            throw;
+                            _publishSnapshot(currentState);
+                            await Task.Delay(200, token);
+                            continue;
                         }
 
                         try
@@ -271,7 +266,7 @@ public sealed class BotRuntime
         current = await TryAutoWithdrawStationCreditsAsync(current);
         current = await TryAutoCompleteMissionsAsync(current);
 
-        if (includeScriptRefuel && _agent.CurrentControlModeKind == ControlModeKind.ScriptMode)
+        if (includeScriptRefuel)
             current = await TryAutoRefuelBetweenScriptStepsAsync(current);
 
         return current;

@@ -33,7 +33,7 @@ public class SpaceMoltAgent
 
     private readonly ILLMClient _plannerLlm;
     private readonly PromptScriptRag? _scriptExampleRag;
-    private ControlMode _controlMode = ScriptMode.Instance;
+    private const string ControlModeName = "ScriptMode";
 
     private string? _script;
     private string? _lastScriptGenerationPrompt;
@@ -44,9 +44,7 @@ public class SpaceMoltAgent
     private readonly List<ScriptGenerationExample> _scriptGenerationExamples = new();
 
     public bool IsHalted => _isHalted;
-    public ControlModeKind CurrentControlModeKind => _controlMode.Kind;
-
-    public string CurrentControlModeName => _controlMode.Name;
+    public string CurrentControlModeName => ControlModeName;
     public string? LastScriptGenerationPrompt => _lastScriptGenerationPrompt;
     public int? CurrentScriptLine => _currentScriptLine;
 
@@ -166,12 +164,10 @@ public class SpaceMoltAgent
             (previousError ?? "Unknown script error."));
     }
 
-    public void SetControlMode(ControlMode mode, bool clearCurrentPlan = true)
+    public void ActivateScriptControl()
     {
-        _controlMode = mode ?? ScriptMode.Instance;
         _isHalted = false;
-
-        SetStatus($"Mode: {_controlMode.Name}");
+        SetStatus($"Mode: {ControlModeName}");
     }
 
     public bool InterruptActiveCommand(string reason = "Interrupted")
@@ -192,7 +188,7 @@ public class SpaceMoltAgent
         SetStatus(reason);
     }
 
-    public void ResumeFromHalt(bool clearCurrentPlan = true, string reason = "Resumed")
+    public void ResumeFromHalt(string reason = "Resumed")
     {
         _isHalted = false;
         SetStatus(reason);
@@ -486,7 +482,7 @@ AVAILABLE MISSIONS
         {
             var sb = new StringBuilder();
             sb.AppendLine($"[{DateTime.UtcNow:O}] === COMMAND_EXECUTION:{phase} ===");
-            sb.AppendLine($"ControlMode: {_controlMode.Name}");
+            sb.AppendLine($"ControlMode: {ControlModeName}");
             sb.AppendLine($"Command: {commandText}");
 
             if (!string.IsNullOrWhiteSpace(details))
