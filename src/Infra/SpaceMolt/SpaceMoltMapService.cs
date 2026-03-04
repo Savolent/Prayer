@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
 using System.Text.Json;
 using System.Threading;
@@ -26,9 +25,7 @@ internal sealed class SpaceMoltMapService
 
     public void PromoteCachedMapFromDisk()
     {
-        var cachedMap = GalaxyMapSnapshotFile.Load(_mapFile);
-        var knownPois = GalaxyKnownPoiSnapshotFile.Load(_knownPoisFile);
-        GalaxyMapSnapshotFile.MergeKnownPois(cachedMap, knownPois);
+        var cachedMap = GalaxyMapSnapshotFile.LoadWithKnownPois(_mapFile, _knownPoisFile);
         if (cachedMap.Systems.Count > 0 || cachedMap.KnownPois.Count > 0)
         {
             _cachedMap = cachedMap;
@@ -46,24 +43,14 @@ internal sealed class SpaceMoltMapService
                 (_cachedMap.Systems.Count > 0 || _cachedMap.KnownPois.Count > 0))
                 return _cachedMap;
 
-            if (!forceRefresh && File.Exists(_mapFile))
+            if (!forceRefresh)
             {
-                try
+                var hydrated = GalaxyMapSnapshotFile.LoadWithKnownPois(_mapFile, _knownPoisFile);
+                if (hydrated.Systems.Count > 0 || hydrated.KnownPois.Count > 0)
                 {
-                    string rawCache = await File.ReadAllTextAsync(_mapFile);
-                    var hydrated = GalaxyMapSnapshotFile.Parse(rawCache);
-                    var knownPois = GalaxyKnownPoiSnapshotFile.Load(_knownPoisFile);
-                    GalaxyMapSnapshotFile.MergeKnownPois(hydrated, knownPois);
-                    if (hydrated.Systems.Count > 0 || hydrated.KnownPois.Count > 0)
-                    {
-                        _cachedMap = hydrated;
-                        GalaxyStateHub.MergeMap(_cachedMap);
-                        return _cachedMap;
-                    }
-                }
-                catch
-                {
-                    // Ignore cache read/parse errors and refresh from API.
+                    _cachedMap = hydrated;
+                    GalaxyStateHub.MergeMap(_cachedMap);
+                    return _cachedMap;
                 }
             }
 
@@ -82,10 +69,7 @@ internal sealed class SpaceMoltMapService
                 // Ignore map cache write failures and continue with in-memory map.
             }
 
-            _cachedMap = GalaxyMapSnapshotFile.Parse(mapResult);
-            GalaxyMapSnapshotFile.MergeKnownPois(
-                _cachedMap,
-                GalaxyKnownPoiSnapshotFile.Load(_knownPoisFile));
+            _cachedMap = GalaxyMapSnapshotFile.ParseWithKnownPois(mapResult, _knownPoisFile);
             GalaxyStateHub.MergeMap(_cachedMap);
 
             return _cachedMap;
@@ -104,10 +88,7 @@ internal sealed class SpaceMoltMapService
         await _mapCacheLock.WaitAsync();
         try
         {
-            _cachedMap ??= GalaxyMapSnapshotFile.Load(_mapFile);
-            GalaxyMapSnapshotFile.MergeKnownPois(
-                _cachedMap,
-                GalaxyKnownPoiSnapshotFile.Load(_knownPoisFile));
+            _cachedMap ??= GalaxyMapSnapshotFile.LoadWithKnownPois(_mapFile, _knownPoisFile);
 
             var knownByPoiId = (_cachedMap.KnownPois ?? new List<GalaxyKnownPoiInfo>())
                 .Where(p => !string.IsNullOrWhiteSpace(p.Id))

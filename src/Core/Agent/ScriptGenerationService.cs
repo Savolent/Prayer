@@ -448,9 +448,8 @@ public sealed class ScriptGenerationService
 
     private static GalaxyMapSnapshot LoadMapCache()
     {
-        var map = GalaxyMapSnapshotFile.Load(AppPaths.GalaxyMapFile);
-        var knownPois = GalaxyKnownPoiSnapshotFile.Load(AppPaths.GalaxyKnownPoisFile);
-        GalaxyMapSnapshotFile.MergeKnownPois(map, knownPois);
-        return map;
+        return GalaxyMapSnapshotFile.LoadWithKnownPois(
+            AppPaths.GalaxyMapFile,
+            AppPaths.GalaxyKnownPoisFile);
     }
 }

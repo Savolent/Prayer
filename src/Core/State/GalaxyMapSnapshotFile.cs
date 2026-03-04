@@ -6,6 +6,22 @@ using System.Text.Json;
 
 internal static class GalaxyMapSnapshotFile
 {
+    public static GalaxyMapSnapshot LoadWithKnownPois(string mapPath, string knownPoisPath)
+    {
+        var map = Load(mapPath);
+        var knownPois = GalaxyKnownPoiSnapshotFile.Load(knownPoisPath);
+        MergeKnownPois(map, knownPois);
+        return map;
+    }
+
+    public static GalaxyMapSnapshot ParseWithKnownPois(JsonElement root, string knownPoisPath)
+    {
+        var map = Parse(root);
+        var knownPois = GalaxyKnownPoiSnapshotFile.Load(knownPoisPath);
+        MergeKnownPois(map, knownPois);
+        return map;
+    }
+
     public static GalaxyMapSnapshot Load(string path)
     {
         try

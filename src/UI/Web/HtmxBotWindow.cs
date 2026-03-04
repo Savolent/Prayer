@@ -11,7 +11,6 @@ public sealed class HtmxBotWindow : IAppUi
 {
     private readonly object _lock = new();
     private readonly string _prefix;
-    private readonly string _editorBootstrapJson;
     private bool _running;
     private HttpListener? _listener;
 
@@ -49,7 +48,6 @@ public sealed class HtmxBotWindow : IAppUi
     public HtmxBotWindow(string prefix = "http://localhost:5057/")
     {
         _prefix = EnsureTrailingSlash(prefix);
-        _editorBootstrapJson = BuildEditorBootstrapJson();
         _providers.Add("llamacpp");
         _modelsByProvider["llamacpp"] = new[] { "model" };
     }
@@ -255,7 +253,7 @@ public sealed class HtmxBotWindow : IAppUi
 
         if (req.HttpMethod == "GET" && path == "/bootstrap/editor-data")
         {
-            WriteText(ctx.Response, _editorBootstrapJson, "application/json; charset=utf-8");
+            WriteText(ctx.Response, BuildEditorBootstrapJson(), "application/json; charset=utf-8");
             return;
         }
 
@@ -280,9 +278,10 @@ public sealed class HtmxBotWindow : IAppUi
             UiSnapshot snapshot;
             lock (_lock) snapshot = _snapshot;
 
-            var prompt = BuildActiveMissionObjectivesPrompt(snapshot.ActiveMissionPrompts);
-            if (!string.IsNullOrWhiteSpace(prompt))
-                _generateScriptWriter?.TryWrite(prompt);
+            var prompt = BuildActiveMissionObjectivesPrompt(
+                snapshot.ActiveMissionPrompts,
+                snapshot.CantinaStateMarkdown);
+            _generateScriptWriter?.TryWrite(prompt);
 
             WriteNoContent(ctx.Response);
             return;
@@ -482,6 +481,8 @@ public sealed class HtmxBotWindow : IAppUi
         sb.AppendLine("#live-script-editor .CodeMirror { height:140px; }");
         sb.AppendLine(".CodeMirror .run-line-active { background: rgba(90, 201, 119, 0.12); }");
         sb.AppendLine(".cm-s-material-darker .cm-atom { color:#ffd166; font-weight:600; }");
+        sb.AppendLine(".cm-s-material-darker .cm-variable-2 { color:#79c0ff; font-weight:600; }");
+        sb.AppendLine(".cm-s-material-darker .cm-string-2 { color:#ff9e64; font-weight:600; }");
         sb.AppendLine(".script-code { white-space:pre-wrap; word-break:break-word; }");
         sb.AppendLine("#state-panel { overflow-y:auto; }");
         sb.AppendLine("#right-panel { overflow-y:auto; }");
@@ -608,7 +609,15 @@ public sealed class HtmxBotWindow : IAppUi
         sb.AppendLine("    return new RegExp(pattern, 'i');");
         sb.AppendLine("  };");
         sb.AppendLine("  window._scriptCommandRegex = window.buildNameRegex(commands, true);");
+        sb.AppendLine("  window._scriptSystemRegex = null;");
+        sb.AppendLine("  window._scriptPoiRegex = null;");
         sb.AppendLine("  window._scriptSymbolRegex = null;");
+        sb.AppendLine("  window.setScriptLocationSymbols = function (systemSymbols, poiSymbols) {");
+        sb.AppendLine("    window._scriptSystemRegex = window.buildNameRegex(systemSymbols || [], false);");
+        sb.AppendLine("    window._scriptPoiRegex = window.buildNameRegex(poiSymbols || [], false);");
+        sb.AppendLine("    if (window._scriptEditor) window._scriptEditor.refresh();");
+        sb.AppendLine("    if (window._liveScriptEditor) window._liveScriptEditor.refresh();");
+        sb.AppendLine("  };");
         sb.AppendLine("  window.setScriptSymbols = function (nextSymbols) {");
         sb.AppendLine("    window._scriptSymbolRegex = window.buildNameRegex(nextSymbols || [], false);");
         sb.AppendLine("    if (window._scriptEditor) window._scriptEditor.refresh();");
@@ -622,6 +631,7 @@ public sealed class HtmxBotWindow : IAppUi
         sb.AppendLine("      .then(function (data) {");
         sb.AppendLine("        if (!data) return;");
         sb.AppendLine("        if (Array.isArray(data.scriptHighlightNames)) window.setScriptSymbols(data.scriptHighlightNames);");
+        sb.AppendLine("        window.setScriptLocationSymbols(data.systemHighlightNames || [], data.poiHighlightNames || []);");
         sb.AppendLine("        if (data.galaxyMap) window._galaxyMap = data.galaxyMap;");
         sb.AppendLine("      })");
         sb.AppendLine("      .catch(function () { });");
@@ -641,6 +651,14 @@ public sealed class HtmxBotWindow : IAppUi
         sb.AppendLine("            stream.next();");
         sb.AppendLine("            state.lineStart = false;");
         sb.AppendLine("            return 'operator';");
+        sb.AppendLine("          }");
+        sb.AppendLine("          if (window._scriptSystemRegex && stream.match(window._scriptSystemRegex, true, true)) {");
+        sb.AppendLine("            state.lineStart = false;");
+        sb.AppendLine("            return 'variable-2';");
+        sb.AppendLine("          }");
+        sb.AppendLine("          if (window._scriptPoiRegex && stream.match(window._scriptPoiRegex, true, true)) {");
+        sb.AppendLine("            state.lineStart = false;");
+        sb.AppendLine("            return 'string-2';");
         sb.AppendLine("          }");
         sb.AppendLine("          if (window._scriptSymbolRegex && stream.match(window._scriptSymbolRegex, true, true)) {");
         sb.AppendLine("            state.lineStart = false;");
@@ -857,31 +875,51 @@ public sealed class HtmxBotWindow : IAppUi
     }
 
     private static string BuildActiveMissionObjectivesPrompt(
-        IReadOnlyList<MissionPromptOption> activeMissionPrompts)
+        IReadOnlyList<MissionPromptOption> activeMissionPrompts,
+        string? cantinaStateMarkdown)
     {
-        if (activeMissionPrompts == null || activeMissionPrompts.Count == 0)
-            return "";
-
         var sb = new StringBuilder();
         sb.AppendLine("Create a SpaceMolt script that progresses these active mission objectives.");
         sb.AppendLine("Prioritize objectives that can be completed at the current station, then route efficiently for the rest.");
         sb.AppendLine("Use only valid commands and keep the script concise.");
-        sb.AppendLine();
-        sb.AppendLine("Active mission objectives:");
-
-        foreach (var mission in activeMissionPrompts)
+        
+        bool wroteObjectives = false;
+        if (activeMissionPrompts != null && activeMissionPrompts.Count > 0)
         {
-            var label = (mission.Label ?? string.Empty).Trim();
-            var objective = (mission.Prompt ?? string.Empty).Trim();
-            if (string.IsNullOrWhiteSpace(label) && string.IsNullOrWhiteSpace(objective))
-                continue;
+            sb.AppendLine();
+            sb.AppendLine("Active mission objectives:");
+            foreach (var mission in activeMissionPrompts)
+            {
+                var label = (mission.Label ?? string.Empty).Trim();
+                var objective = (mission.Prompt ?? string.Empty).Trim();
+                if (string.IsNullOrWhiteSpace(label) && string.IsNullOrWhiteSpace(objective))
+                    continue;
 
-            if (string.IsNullOrWhiteSpace(label))
-                sb.Append("- ").AppendLine(objective);
-            else if (string.IsNullOrWhiteSpace(objective))
-                sb.Append("- ").AppendLine(label);
+                if (string.IsNullOrWhiteSpace(label))
+                    sb.Append("- ").AppendLine(objective);
+                else if (string.IsNullOrWhiteSpace(objective))
+                    sb.Append("- ").AppendLine(label);
+                else
+                    sb.Append("- ").Append(label).Append(": ").AppendLine(objective);
+
+                wroteObjectives = true;
+            }
+        }
+
+        if (!wroteObjectives)
+        {
+            var cantina = (cantinaStateMarkdown ?? string.Empty).Trim();
+            sb.AppendLine();
+            if (!string.IsNullOrWhiteSpace(cantina))
+            {
+                sb.AppendLine("Use this cantina mission context:");
+                sb.AppendLine(cantina);
+            }
             else
-                sb.Append("- ").Append(label).Append(": ").AppendLine(objective);
+            {
+                sb.AppendLine("Mission objectives were not parsed in the latest snapshot.");
+                sb.AppendLine("Inspect current mission details in state and create the best mission-progress script.");
+            }
         }
 
         return sb.ToString().Trim();
@@ -905,11 +943,42 @@ public sealed class HtmxBotWindow : IAppUi
         var highlightNames = LoadScriptHighlightNamesFromCache()
             .OrderBy(n => n, StringComparer.OrdinalIgnoreCase)
             .ToList();
-        var galaxyMap = GalaxyMapSnapshotFile.Load(AppPaths.GalaxyMapFile);
+        var galaxyMap = GalaxyMapSnapshotFile.LoadWithKnownPois(
+            AppPaths.GalaxyMapFile,
+            AppPaths.GalaxyKnownPoisFile);
+        var systemNames = galaxyMap.Systems
+            .Where(s => !string.IsNullOrWhiteSpace(s?.Id))
+            .Select(s => s.Id.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(n => n, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        var poiNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var system in galaxyMap.Systems ?? new List<GalaxySystemInfo>())
+        {
+            foreach (var poi in system?.Pois ?? new List<GalaxyPoiInfo>())
+            {
+                var poiId = (poi?.Id ?? string.Empty).Trim();
+                if (poiId.Length > 0)
+                    poiNames.Add(poiId);
+            }
+        }
+
+        foreach (var poi in galaxyMap.KnownPois ?? new List<GalaxyKnownPoiInfo>())
+        {
+            var poiId = (poi?.Id ?? string.Empty).Trim();
+            if (poiId.Length > 0)
+                poiNames.Add(poiId);
+
+            var poiName = (poi?.Name ?? string.Empty).Trim();
+            if (poiName.Length > 0)
+                poiNames.Add(poiName);
+        }
 
         return JsonSerializer.Serialize(new
         {
             scriptHighlightNames = highlightNames,
+            systemHighlightNames = systemNames,
+            poiHighlightNames = poiNames.OrderBy(n => n, StringComparer.OrdinalIgnoreCase).ToList(),
             galaxyMap
         });
     }
@@ -927,7 +996,9 @@ public sealed class HtmxBotWindow : IAppUi
 
         try
         {
-            var map = GalaxyMapSnapshotFile.Load(AppPaths.GalaxyMapFile);
+            var map = GalaxyMapSnapshotFile.LoadWithKnownPois(
+                AppPaths.GalaxyMapFile,
+                AppPaths.GalaxyKnownPoisFile);
             foreach (var system in map.Systems ?? new List<GalaxySystemInfo>())
                 AddName(system?.Id);
         }
