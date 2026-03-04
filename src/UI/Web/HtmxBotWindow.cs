@@ -275,6 +275,19 @@ public sealed class HtmxBotWindow : IAppUi
             return;
         }
 
+        if (req.HttpMethod == "POST" && path == "/api/prompt-active-missions")
+        {
+            UiSnapshot snapshot;
+            lock (_lock) snapshot = _snapshot;
+
+            var prompt = BuildActiveMissionObjectivesPrompt(snapshot.ActiveMissionPrompts);
+            if (!string.IsNullOrWhiteSpace(prompt))
+                _generateScriptWriter?.TryWrite(prompt);
+
+            WriteNoContent(ctx.Response);
+            return;
+        }
+
         if (req.HttpMethod == "POST" && path == "/api/control-input")
         {
             var form = ReadForm(req);
@@ -525,6 +538,7 @@ public sealed class HtmxBotWindow : IAppUi
             + BuildLoopButtonFormHtml(activeBotLoopEnabled)
             + "</div></div>");
         sb.AppendLine("<h4>Prompt</h4><form hx-post='/api/prompt' hx-swap='none' class='list'><textarea name='prompt' rows='4' placeholder='prompt for script generation'></textarea><button type='submit'>Generate Script</button></form>");
+        sb.AppendLine("<form hx-post='/api/prompt-active-missions' hx-swap='none'><button type='submit'>Generate From Active Mission Objectives</button></form>");
         sb.AppendLine("<div id='right-panel' hx-get='/partial/right' hx-trigger='load, every 1000ms' hx-swap='innerHTML'></div></div>");
 
         sb.AppendLine("<script>");
@@ -823,14 +837,6 @@ public sealed class HtmxBotWindow : IAppUi
         lock (_lock) snapshot = _snapshot;
         var sb = new StringBuilder();
         sb.AppendLine($"<div class='small'>Loop: {(snapshot.ActiveBotLoopEnabled ? "ON" : "OFF")}</div>");
-        if (snapshot.ActiveMissionPrompts.Count > 0)
-        {
-            sb.AppendLine("<h4>Mission Prompts</h4><pre>");
-            foreach (var m in snapshot.ActiveMissionPrompts)
-                sb.Append("- ").Append(E(m.Label)).Append(": ").Append(E(m.Prompt)).AppendLine();
-            sb.AppendLine("</pre>");
-        }
-
         sb.AppendLine("<h4>Execution</h4><pre>");
         foreach (var line in snapshot.ExecutionStatusLines)
             sb.Append(E(line)).AppendLine();
@@ -848,6 +854,37 @@ public sealed class HtmxBotWindow : IAppUi
         bool loopEnabled;
         lock (_lock) loopEnabled = _snapshot.ActiveBotLoopEnabled;
         return BuildLoopButtonFormHtml(loopEnabled);
+    }
+
+    private static string BuildActiveMissionObjectivesPrompt(
+        IReadOnlyList<MissionPromptOption> activeMissionPrompts)
+    {
+        if (activeMissionPrompts == null || activeMissionPrompts.Count == 0)
+            return "";
+
+        var sb = new StringBuilder();
+        sb.AppendLine("Create a SpaceMolt script that progresses these active mission objectives.");
+        sb.AppendLine("Prioritize objectives that can be completed at the current station, then route efficiently for the rest.");
+        sb.AppendLine("Use only valid commands and keep the script concise.");
+        sb.AppendLine();
+        sb.AppendLine("Active mission objectives:");
+
+        foreach (var mission in activeMissionPrompts)
+        {
+            var label = (mission.Label ?? string.Empty).Trim();
+            var objective = (mission.Prompt ?? string.Empty).Trim();
+            if (string.IsNullOrWhiteSpace(label) && string.IsNullOrWhiteSpace(objective))
+                continue;
+
+            if (string.IsNullOrWhiteSpace(label))
+                sb.Append("- ").AppendLine(objective);
+            else if (string.IsNullOrWhiteSpace(objective))
+                sb.Append("- ").AppendLine(label);
+            else
+                sb.Append("- ").Append(label).Append(": ").AppendLine(objective);
+        }
+
+        return sb.ToString().Trim();
     }
 
     private string BuildLlmSummaryHtml()
