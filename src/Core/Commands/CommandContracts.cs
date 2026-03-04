@@ -33,15 +33,6 @@ public enum DslArgKind
     String = Any
 }
 
-public enum DslCommandGroup
-{
-    Space,
-    Trade,
-    Hangar,
-    Shipyard,
-    ShipCatalog
-}
-
 public sealed record DslArgumentSpec(
     DslArgKind Kind,
     bool Required = true,

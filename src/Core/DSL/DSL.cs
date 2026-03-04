@@ -41,17 +41,6 @@ public sealed record DslCommandAstNode(string Name, IReadOnlyList<string> Args, 
 
 public static class DslParser
 {
-    private static readonly HashSet<string> FlattenedTradeCommands =
-        new(StringComparer.OrdinalIgnoreCase)
-        {
-            "buy",
-            "sell",
-            "cancel_buy",
-            "cancel_sell",
-            "retrieve",
-            "stash",
-        };
-
     private static readonly IReadOnlyDictionary<string, string[]> PromptArgNameOverrides =
         new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase)
         {
@@ -77,12 +66,12 @@ public static class DslParser
             ["list_ship_for_sale"] = new[] { "price" },
         };
 
-    private static readonly IReadOnlyDictionary<DslCommandGroup, IReadOnlyList<ICommand>> CommandsByGroup =
-        BuildCommandsByGroup();
-    private static readonly IReadOnlyDictionary<DslCommandGroup, HashSet<string>> CommandNameSetsByGroup =
-        BuildCommandNameSetsByGroup(CommandsByGroup);
+    private static readonly IReadOnlyList<ICommand> Commands =
+        BuildCommands();
+    private static readonly HashSet<string> CommandNameSet =
+        BuildCommandNameSet(Commands);
     private static readonly IReadOnlyDictionary<string, DslCommandSyntax> CommandSyntaxByName =
-        BuildCommandSyntaxByName(CommandsByGroup);
+        BuildCommandSyntaxByName(Commands);
     private static readonly TextParser<Unit> Ws =
         Character.WhiteSpace.Many().Value(Unit.Value);
 
@@ -134,7 +123,7 @@ public static class DslParser
         {
             var tree = ProgramAstParser.Parse(text);
             tree = AnnotateSourceLines(text, tree);
-            ValidateTree(tree, RootGroup);
+            ValidateTree(tree);
             return tree;
         }
         catch (ParseException ex)
@@ -270,31 +259,23 @@ public static class DslParser
         return new DslProgram(steps);
     }
 
-    public static string BuildLlamaCppGrammar(DslCommandGroup rootGroup = DslCommandGroup.Space)
+    public static string BuildLlamaCppGrammar()
     {
         var sb = new StringBuilder();
-        var rootName = GroupRuleName(rootGroup);
 
-        sb.AppendLine($"root ::= ws script_{rootName} ws");
+        sb.AppendLine("root ::= ws script ws");
         sb.AppendLine("ws ::= [ \\t\\n\\r]*");
         sb.AppendLine("identifier ::= [A-Za-z_][A-Za-z0-9_-]*");
         sb.AppendLine("integer ::= [0-9]+");
         sb.AppendLine();
-
-        foreach (var group in Enum.GetValues<DslCommandGroup>())
-        {
-            BuildGroupGrammar(group, sb);
-        }
+        BuildGrammar(sb);
 
         return sb.ToString().TrimEnd();
     }
 
     public static string BuildPromptDslReferenceBlock()
     {
-        var commands = CommandsByGroup.Values
-            .SelectMany(group => group)
-            .GroupBy(c => c.Name, StringComparer.OrdinalIgnoreCase)
-            .Select(g => g.First())
+        var commands = Commands
             .OrderBy(c => c.Name, StringComparer.OrdinalIgnoreCase)
             .ToList();
 
@@ -326,8 +307,7 @@ public static class DslParser
 
     internal static string NormalizeCommandStep(
         string commandName,
-        IReadOnlyList<string>? commandArgs,
-        DslCommandGroup currentGroup)
+        IReadOnlyList<string>? commandArgs)
     {
         var token = commandName.ToLowerInvariant();
         var args = (commandArgs ?? Array.Empty<string>()).ToList();
@@ -340,7 +320,7 @@ public static class DslParser
             syntax = directSyntax;
         }
         else if (args.Count == 0 &&
-                 TrySplitCollapsedCommand(commandName, currentGroup, out var splitName, out var splitArg))
+                 TrySplitCollapsedCommand(commandName, out var splitName, out var splitArg))
         {
             normalizedName = splitName;
             syntax = CommandSyntaxByName[splitName];
@@ -371,8 +351,6 @@ public static class DslParser
             : $"{normalizedName} {string.Join(" ", args)}";
     }
 
-    internal static DslCommandGroup RootGroup => DslCommandGroup.Space;
-
     internal static IReadOnlyList<DslArgumentSpec> GetArgSpecsForCommand(string commandName)
     {
         if (string.IsNullOrWhiteSpace(commandName))
@@ -384,53 +362,32 @@ public static class DslParser
         return ResolveArgSpecs(syntax);
     }
 
-    private static IReadOnlyDictionary<DslCommandGroup, IReadOnlyList<ICommand>> BuildCommandsByGroup()
+    private static IReadOnlyList<ICommand> BuildCommands()
     {
-        var flattenedSpaceCommands = SpaceContextMode.Instance.GetCommands()
-            .Concat(TradeContextMode.Instance.GetCommands()
-                .Where(c => FlattenedTradeCommands.Contains(c.Name)))
-            .ToList();
-
-        return new Dictionary<DslCommandGroup, IReadOnlyList<ICommand>>
-        {
-            [DslCommandGroup.Space] = UniqueByName(flattenedSpaceCommands),
-            [DslCommandGroup.Trade] = UniqueByName(TradeContextMode.Instance.GetCommands()),
-            [DslCommandGroup.Hangar] = UniqueByName(HangarContextMode.Instance.GetCommands()),
-            [DslCommandGroup.Shipyard] = UniqueByName(ShipyardContextMode.Instance.GetCommands()),
-            [DslCommandGroup.ShipCatalog] = UniqueByName(ShipCatalogContextMode.Instance.GetCommands()),
-        };
+        return UniqueByName(CommandCatalog.All);
     }
 
-    private static IReadOnlyDictionary<DslCommandGroup, HashSet<string>> BuildCommandNameSetsByGroup(
-        IReadOnlyDictionary<DslCommandGroup, IReadOnlyList<ICommand>> commandsByGroup)
+    private static HashSet<string> BuildCommandNameSet(
+        IReadOnlyList<ICommand> commands)
     {
-        var result = new Dictionary<DslCommandGroup, HashSet<string>>();
-        foreach (var (group, commands) in commandsByGroup)
-        {
-            result[group] = commands
-                .Select(c => c.Name)
-                .ToHashSet(StringComparer.OrdinalIgnoreCase);
-        }
-
-        return result;
+        return commands
+            .Select(c => c.Name)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
     }
 
     private static IReadOnlyDictionary<string, DslCommandSyntax> BuildCommandSyntaxByName(
-        IReadOnlyDictionary<DslCommandGroup, IReadOnlyList<ICommand>> commandsByGroup)
+        IReadOnlyList<ICommand> commands)
     {
         var map = new Dictionary<string, DslCommandSyntax>(StringComparer.OrdinalIgnoreCase);
-        foreach (var group in commandsByGroup.Values)
+        foreach (var command in commands)
         {
-            foreach (var command in group)
-            {
-                if (map.ContainsKey(command.Name))
-                    continue;
+            if (map.ContainsKey(command.Name))
+                continue;
 
-                var syntax = command is IDslCommandGrammar provider
-                    ? provider.GetDslSyntax()
-                    : new DslCommandSyntax();
-                map[command.Name] = syntax;
-            }
+            var syntax = command is IDslCommandGrammar provider
+                ? provider.GetDslSyntax()
+                : new DslCommandSyntax();
+            map[command.Name] = syntax;
         }
 
         return map;
@@ -442,10 +399,9 @@ public static class DslParser
             .Select(g => g.First())
             .ToList();
 
-    private static void BuildGroupGrammar(DslCommandGroup group, StringBuilder sb)
+    private static void BuildGrammar(StringBuilder sb)
     {
-        var groupName = GroupRuleName(group);
-        var commands = CommandsByGroup[group]
+        var commands = Commands
             .OrderBy(c => c.Name, StringComparer.OrdinalIgnoreCase)
             .ToList();
         var statementRules = new List<string>();
@@ -454,7 +410,7 @@ public static class DslParser
         {
             var commandName = command.Name.ToLowerInvariant();
             var syntax = CommandSyntaxByName[commandName];
-            var commandRuleName = $"cmd_{groupName}_{RuleToken(commandName)}";
+            var commandRuleName = $"cmd_{RuleToken(commandName)}";
             var headPattern = BuildCommandHeadPattern(commandName, syntax);
 
             sb.AppendLine($"{commandRuleName} ::= {headPattern} ws \";\"");
@@ -462,8 +418,8 @@ public static class DslParser
             statementRules.Add(commandRuleName);
         }
 
-        sb.AppendLine($"statement_{groupName} ::= {string.Join(" | ", statementRules)}");
-        sb.AppendLine($"script_{groupName} ::= (ws statement_{groupName})*");
+        sb.AppendLine($"statement ::= {string.Join(" | ", statementRules)}");
+        sb.AppendLine("script ::= (ws statement)*");
         sb.AppendLine();
     }
 
@@ -576,9 +532,6 @@ public static class DslParser
     private static string RuleToken(string value)
         => string.Concat(value.Select(ch => char.IsLetterOrDigit(ch) ? ch : '_'));
 
-    private static string GroupRuleName(DslCommandGroup group)
-        => group.ToString().ToLowerInvariant();
-
     private static string Quote(string value)
         => $"\"{value.Replace("\\", "\\\\").Replace("\"", "\\\"")}\"";
 
@@ -602,17 +555,13 @@ public static class DslParser
 
     private static bool TrySplitCollapsedCommand(
         string token,
-        DslCommandGroup group,
         out string commandName,
         out string arg)
     {
         commandName = "";
         arg = "";
 
-        if (!CommandNameSetsByGroup.TryGetValue(group, out var allowed))
-            return false;
-
-        var candidates = allowed
+        var candidates = CommandNameSet
             .Where(name => token.Length > name.Length &&
                            token.StartsWith(name, StringComparison.OrdinalIgnoreCase))
             .OrderByDescending(name => name.Length);
@@ -645,14 +594,13 @@ public static class DslParser
         return false;
     }
 
-    private static void ValidateTree(DslAstProgram tree, DslCommandGroup rootGroup)
+    private static void ValidateTree(DslAstProgram tree)
     {
-        ValidateNodes(tree.Statements, rootGroup);
+        ValidateNodes(tree.Statements);
     }
 
     private static void ValidateNodes(
-        IReadOnlyList<DslAstNode> nodes,
-        DslCommandGroup currentGroup)
+        IReadOnlyList<DslAstNode> nodes)
     {
         foreach (var node in nodes)
         {
@@ -663,10 +611,10 @@ public static class DslParser
                     var normalizedName = (commandNode.Name ?? "").Trim().ToLowerInvariant();
                     var args = commandNode.Args ?? Array.Empty<string>();
 
-                    if (!IsCommandAllowedInGroup(normalizedName, args, currentGroup))
+                    if (!IsCommandAllowed(normalizedName, args))
                     {
                         throw new FormatException(
-                            $"Command '{commandNode.Name}' is not allowed in {currentGroup} scope.");
+                            $"Command '{commandNode.Name}' is not recognized.");
                     }
 
                     if (CommandSyntaxByName.TryGetValue(normalizedName, out var commandSyntax))
@@ -680,21 +628,17 @@ public static class DslParser
         }
     }
 
-    private static bool IsCommandAllowedInGroup(
+    private static bool IsCommandAllowed(
         string commandName,
-        IReadOnlyList<string>? commandArgs,
-        DslCommandGroup currentGroup)
+        IReadOnlyList<string>? commandArgs)
     {
-        if (!CommandNameSetsByGroup.TryGetValue(currentGroup, out var allowed))
-            return false;
-
         var normalized = commandName.ToLowerInvariant();
-        if (allowed.Contains(normalized))
+        if (CommandNameSet.Contains(normalized))
             return true;
 
         return (commandArgs == null || commandArgs.Count == 0) &&
-               TrySplitCollapsedCommand(commandName, currentGroup, out var splitName, out _) &&
-               allowed.Contains(splitName);
+               TrySplitCollapsedCommand(commandName, out var splitName, out _) &&
+               CommandNameSet.Contains(splitName);
     }
 
     private static void ValidateCommandArgs(

@@ -224,14 +224,7 @@ public class SpaceMoltAgent
         _plannerLlm = plannerLlm ?? llm;
         _scriptExampleRag = scriptExampleRag;
 
-        _commands = SpaceContextMode.Instance.GetCommands()
-            .Concat(TradeContextMode.Instance.GetCommands())
-            .Concat(HangarContextMode.Instance.GetCommands())
-            .Concat(ShipyardContextMode.Instance.GetCommands())
-            .Concat(ShipCatalogContextMode.Instance.GetCommands())
-            .GroupBy(c => c.Name, StringComparer.OrdinalIgnoreCase)
-            .Select(g => g.First())
-            .ToList();
+        _commands = CommandCatalog.All.ToList();
 
         _commandMap = _commands.ToDictionary(c => c.Name, StringComparer.OrdinalIgnoreCase);
         LoadScriptGenerationExamples();
@@ -283,16 +276,15 @@ public class SpaceMoltAgent
     public IReadOnlyList<string> GetAvailableActions(GameState state)
     {
         return _commands
-            .Where(c => c.IsAvailable(state))
             .Select(c => c.BuildHelp(state))
             .ToList();
     }
 
     public (string SpaceStateMarkdown, string? TradeStateMarkdown, string? ShipyardStateMarkdown, string? CantinaStateMarkdown) BuildUiState(GameState state)
     {
-        var spaceState = SpaceContextMode.Instance.ToDisplayText(state);
+        var spaceState = state.ToDisplayText();
         var tradeState = state.Docked
-            ? TradeContextMode.Instance.ToDisplayText(state)
+            ? BuildTradeUiState(state)
             : null;
         var shipyardState = state.Docked && state.CurrentPOI.IsStation
             ? BuildShipyardUiState(state)
@@ -304,9 +296,40 @@ public class SpaceMoltAgent
         return (spaceState, tradeState, shipyardState, cantinaState);
     }
 
+    private static string BuildTradeUiState(GameState state)
+    {
+        var prices = state.BuildEstimatedItemPrices();
+        var cargo = GameState.StripMarkdown(GameState.FormatCargo(state.Cargo, prices));
+        var storage = state.Shared.StorageItems != null && state.Shared.StorageItems.Count > 0
+            ? GameState.StripMarkdown(GameState.FormatCargo(state.Shared.StorageItems, prices))
+            : "";
+        var economy = GameState.StripMarkdown(
+            GameState.FormatEconomy(state.Shared.EconomyDeals, state.Shared.OwnBuyOrders, state.Shared.OwnSellOrders));
+        var storageSection = string.IsNullOrWhiteSpace(storage)
+            ? ""
+            : $"\nSTORAGE\n{storage}\n";
+
+        return
+$@"CONTEXT: TRADE TERMINAL
+STATION: {state.CurrentPOI.Id}
+CREDITS: {state.Credits}
+STATION CREDITS: {state.Shared.StorageCredits}
+FUEL: {state.Fuel}/{state.MaxFuel}
+CARGO: {state.CargoUsed}/{state.CargoCapacity}
+
+CARGO ITEMS
+{cargo}
+{storageSection}
+ECONOMY
+{economy}{state.BuildNotificationsDisplaySection()}";
+    }
+
     private static string BuildShipyardUiState(GameState state)
     {
-        var shipyardState = ShipyardContextMode.Instance.ToDisplayText(state);
+        var prices = state.BuildEstimatedItemPrices();
+        var cargo = GameState.StripMarkdown(GameState.FormatCargo(state.Cargo, prices));
+        var showroom = GameState.StripMarkdown(GameState.FormatShipyardShowroomLines(state.ShipyardShowroomLines));
+        var listings = GameState.StripMarkdown(GameState.FormatShipyardShowroomLines(state.ShipyardListingLines));
         int currentPage = state.ShipCatalogue.Page ?? 1;
         int totalPages = state.ShipCatalogue.TotalPages ?? 1;
         int totalItems = state.ShipCatalogue.Total ?? state.ShipCatalogue.TotalItems ?? 0;
@@ -315,7 +338,21 @@ public class SpaceMoltAgent
             GameState.FormatCatalogueEntries(state.ShipCatalogue.NormalizedEntries));
 
         return
-$@"{shipyardState}
+$@"CONTEXT: SHIPYARD
+STATION: {state.CurrentPOI.Id}
+CREDITS: {state.Credits}
+STATION CREDITS: {state.Shared.StorageCredits}
+FUEL: {state.Fuel}/{state.MaxFuel}
+CARGO: {state.CargoUsed}/{state.CargoCapacity}
+
+SHOWROOM
+{showroom}
+
+PLAYER LISTINGS
+{listings}
+
+CARGO ITEMS
+{cargo}{state.BuildNotificationsDisplaySection()}
 
 CATALOG CACHE
 PAGE: {currentPage}/{totalPages}

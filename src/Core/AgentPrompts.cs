@@ -11,7 +11,7 @@ public static class AgentPrompts
             "<|start_header_id|>system<|end_header_id|>\n" +
             "You are the command executor.\n" +
             "Convert the planner suggestion into exactly one valid command.\n" +
-            "If the suggestion is invalid or unavailable, choose the best available command.\n" +
+            "If the suggestion is invalid, choose the best command from the actions list.\n" +
             "<|eot_id|>" +
             "<|start_header_id|>user<|end_header_id|>\n" +
             stateMarkdown + "\n\n" +
@@ -37,7 +37,6 @@ public static class AgentPrompts
             "You are the command selector.\n" +
             "Output exactly one command the agent can execute right now.\n" +
             "You must only output a command from the Available actions block.\n" +
-            "If a command is not currently available, do not output it.\n" +
             "Return only the command text, with no explanation.\n" +
             "Choose the command that most directly carries out the objective right now.\n" +
             "If no suitable command is already found or if the command would cause a loop and `halt` is available, output `halt`.\n" +

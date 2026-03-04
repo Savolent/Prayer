@@ -174,7 +174,7 @@ public class GameState
 
     public string ToDisplayText()
     {
-        return SpaceContextMode.Instance.ToDisplayText(this);
+        return RenderSpaceDisplayText();
     }
 
     internal string RenderTradeLlmMarkdown()
@@ -315,6 +315,39 @@ Current POI Online: {CurrentPOI.Online}
 {BuildChatLlmSection()}
 {r.NotificationsMarkdown}
 ";
+    }
+
+    internal string RenderSpaceDisplayText()
+    {
+        var r = BuildRenderData();
+        string stationCreditsLine = Docked
+            ? $"\nSTATION CREDITS: {Shared.StorageCredits}"
+            : "";
+
+        return
+$@"SYSTEM: {System}
+POI: {CurrentPOI.Id} ({CurrentPOI.Type}){r.PoiDockState}
+CREDITS: {Credits}
+{stationCreditsLine}
+
+SHIP
+- Name: {(string.IsNullOrWhiteSpace(ShipName) ? "-" : ShipName)}
+- Class: {(string.IsNullOrWhiteSpace(ShipClassId) ? "-" : ShipClassId)}
+- Fuel: {Fuel}/{MaxFuel} ({r.FuelPct}%)
+- Hull: {Hull}/{MaxHull} ({r.HullPct}%)
+- Shield: {Shield}/{MaxShield} ({r.ShieldPct}%)
+- Cargo: {CargoUsed}/{CargoCapacity} ({r.CargoPct}% used, {r.CargoFree} free)
+- POI Online: {CurrentPOI.Online}
+
+POIS
+{r.PoisDisplay}
+
+CONNECTED SYSTEMS
+{r.SystemsDisplay}
+
+CARGO
+{r.CargoDisplay}
+{r.StorageItemsSectionDisplay}{BuildChatDisplaySection()}{BuildNotificationsDisplaySection()}";
     }
 
     internal static string StripMarkdown(string value)
