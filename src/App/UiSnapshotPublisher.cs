@@ -61,7 +61,6 @@ public sealed class UiSnapshotPublisher
             _getExecutionStatusLinesForBot(activeBotId),
             null,
             null,
-            new List<string> { "(load a bot with +)" },
             null,
             tabs,
             activeBotId));
@@ -84,7 +83,6 @@ public sealed class UiSnapshotPublisher
             _getExecutionStatusLinesForBot(activeBotId),
             bot.Agent.CurrentControlInput,
             bot.Agent.CurrentScriptLine,
-            bot.Agent.GetAvailableActions(state),
             bot.Agent.LastScriptGenerationPrompt,
             tabs,
             activeBotId));

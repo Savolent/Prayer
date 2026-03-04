@@ -28,7 +28,6 @@ class Program
         var openAiEmbeddingModel = Environment.GetEnvironmentVariable("OPENAI_EMBEDDING_MODEL")
             ?? "text-embedding-3-small";
         var scriptExampleRag = new PromptScriptRag(openAiApiKey, openAiEmbeddingModel);
-        bool hierarchicalPlanningEnabled = true;
 
         var ui = new BotWindow();
         var channels = ProgramChannels.CreateAndBind(ui);
@@ -160,7 +159,6 @@ class Program
             var agent = new SpaceMoltAgent(
                 commandLlm,
                 planningLlm,
-                hierarchicalPlanningEnabled,
                 scriptExampleRag);
             agent.Halt("Awaiting script input");
             agent.SetStatusWriter(channels.Status.Writer);
@@ -531,7 +529,6 @@ class Program
                         snapshot.ExecutionStatusLines,
                         snapshot.ControlInput,
                         snapshot.CurrentScriptLine,
-                        snapshot.Actions,
                         snapshot.LastGenerationPrompt,
                         snapshot.Bots,
                         snapshot.ActiveBotId

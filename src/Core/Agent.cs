@@ -16,7 +16,6 @@ public class SpaceMoltAgent
         "You are an autonomous agent playing the online game SpaceMolt. " +
         "Your objective is to pursue the active objective. " +
         "Make rational, goal-directed decisions based on the current game state. ";
-    private static bool PlanningEnabled => false;
     private const string DefaultScriptGenerationExamples =
         "Go, sell, then mine ->\n" +
         "go system_a;\n" +
@@ -34,11 +33,8 @@ public class SpaceMoltAgent
 
     private readonly ILLMClient _plannerLlm;
     private readonly PromptScriptRag? _scriptExampleRag;
-    private readonly bool _hierarchicalPlanningEnabled;
     private ControlMode _controlMode = ScriptMode.Instance;
 
-    private string? _plan;
-    private string? _objective;
     private string? _script;
     private string? _lastScriptGenerationPrompt;
     private string? _lastGeneratedScript;
@@ -47,10 +43,6 @@ public class SpaceMoltAgent
     private bool _isHalted;
     private readonly List<ScriptGenerationExample> _scriptGenerationExamples = new();
 
-    public string? CurrentObjective
-        => string.IsNullOrWhiteSpace(_objective)
-            ? null
-            : _objective;
     public bool IsHalted => _isHalted;
     public ControlModeKind CurrentControlModeKind => _controlMode.Kind;
 
@@ -71,17 +63,6 @@ public class SpaceMoltAgent
     private void SetStatus(string status)
     {
         _statusWriter?.TryWrite(status);
-    }
-
-    public void SetObjective(string objective, bool clearCurrentPlan = true)
-    {
-        _objective = ParseObjective(objective);
-        _isHalted = false;
-
-        if (clearCurrentPlan)
-            _plan = string.Empty;
-
-        SetStatus("Objective set");
     }
 
     public void SetScript(
@@ -114,7 +95,6 @@ public class SpaceMoltAgent
 
         _scriptQueue = new Queue<CommandResult>(steps);
         _isHalted = false;
-        _plan = string.Empty;
 
         SetStatus(_scriptQueue.Count == 0
             ? "Script loaded (empty)"
@@ -191,9 +171,6 @@ public class SpaceMoltAgent
         _controlMode = mode ?? ScriptMode.Instance;
         _isHalted = false;
 
-        if (clearCurrentPlan)
-            _plan = string.Empty;
-
         SetStatus($"Mode: {_controlMode.Name}");
     }
 
@@ -218,8 +195,6 @@ public class SpaceMoltAgent
     public void ResumeFromHalt(bool clearCurrentPlan = true, string reason = "Resumed")
     {
         _isHalted = false;
-        if (clearCurrentPlan)
-            _plan = string.Empty;
         SetStatus(reason);
     }
 
@@ -244,12 +219,10 @@ public class SpaceMoltAgent
     public SpaceMoltAgent(
         ILLMClient llm,
         ILLMClient? plannerLlm = null,
-        bool hierarchicalPlanningEnabled = true,
         PromptScriptRag? scriptExampleRag = null)
     {
         _plannerLlm = plannerLlm ?? llm;
         _scriptExampleRag = scriptExampleRag;
-        _hierarchicalPlanningEnabled = hierarchicalPlanningEnabled;
 
         _commands = SpaceContextMode.Instance.GetCommands()
             .Concat(TradeContextMode.Instance.GetCommands())
@@ -309,7 +282,7 @@ public class SpaceMoltAgent
 
     public IReadOnlyList<string> GetAvailableActions(GameState state)
     {
-        return GetCandidateCommands(state, onlyAvailable: true)
+        return _commands
             .Where(c => c.IsAvailable(state))
             .Select(c => c.BuildHelp(state))
             .ToList();
@@ -412,8 +385,6 @@ AVAILABLE MISSIONS
                 _activeCommand = null;
                 _activeCommandResult = null;
                 SetStatus("Waiting");
-                if (PlanningEnabled)
-                    await RefreshPlanAfterExecutionAsync(client, state);
             }
 
             await LogCommandExecutionAsync(
@@ -454,8 +425,6 @@ AVAILABLE MISSIONS
                 else
                 {
                     SetStatus("Waiting");
-                    if (PlanningEnabled)
-                        await RefreshPlanAfterExecutionAsync(client, state);
                 }
             }
         }
@@ -525,31 +494,6 @@ AVAILABLE MISSIONS
         return await DecideScriptStepAsync(state);
     }
 
-    private async Task<CommandResult?> DecidePromptStepAsync(GameState state)
-    {
-
-        if (_hierarchicalPlanningEnabled && string.IsNullOrWhiteSpace(_objective))
-        {
-            _objective = await GenerateObjectiveAsync(state);
-        }
-
-        if (!PlanningEnabled)
-            return await ExecutePlanStepAsync(state);
-
-        if (IsPlanEmpty())
-        {
-            SetStatus("Planning");
-            _plan = await GeneratePlanAsync(state);
-
-            if (IsPlanEmpty())
-            {
-                return null;
-            }
-        }
-
-        return await ExecutePlanStepAsync(state);
-    }
-
     private Task<CommandResult?> DecideScriptStepAsync(GameState state)
     {
         while (_scriptQueue.Count > 0)
@@ -588,161 +532,6 @@ AVAILABLE MISSIONS
             new[] { copy }.Concat(_scriptQueue));
     }
 
-    private async Task RefreshPlanAfterExecutionAsync(
-        SpaceMoltHttpClient client,
-        GameState fallbackState)
-    {
-        SetStatus("Planning");
-
-        GameState latestState = fallbackState;
-
-        try
-        {
-            latestState = client.GetGameState();
-        }
-        catch
-        {
-            // Keep using fallback state if refresh fails.
-        }
-
-        _plan = await UpdatePlanAsync(latestState);
-
-        if (IsPlanEmpty())
-        {
-            _plan = await GeneratePlanAsync(latestState);
-        }
-    }
-
-    private async Task<string> GeneratePlanAsync(GameState state)
-    {
-        SetStatus("Planning");
-
-        return await CompletePlanAsync(
-            state,
-            objective:
-                "Create or refresh the rationale.\n" +
-                "Rationale is freeform and can include any useful ideas.\n" +
-                "Keep it concise and practical.",
-            includeCurrentPlan: true,
-            memoryRecent: 8
-        );
-    }
-
-    private async Task<CommandResult?> ExecutePlanStepAsync(GameState state)
-    {
-        SetStatus("Executing: selecting next move");
-
-        if (!GetCandidateCommands(state, onlyAvailable: true).Any(c => c.IsAvailable(state)))
-            return null;
-
-        SetStatus("Executing: planner suggestion");
-        string selectedCommand = await SuggestNextMoveAsync(state);
-        SetStatus($"Executing: selected {selectedCommand}");
-
-        var parsed = Parse(selectedCommand);
-        if (!IsValidCommandForCurrentState(parsed, state))
-        {
-            AddInvalidCommandMemory(parsed);
-            SetStatus("Waiting");
-            return null;
-        }
-
-        return parsed;
-    }
-
-    private async Task<string> SuggestNextMoveAsync(GameState state)
-    {
-        string prompt = AgentPrompts.BuildSuggestNextMovePrompt(
-            baseSystemPrompt: BaseSystemPrompt,
-            stateMarkdown: state.ToLLMMarkdown(),
-            availableActionsBlock: BuildAvailableActionsBlock(state, onlyAvailable: true),
-            allActionsBlock: BuildAvailableActionsBlock(state, onlyAvailable: false),
-            currentObjectiveBlock: BuildCurrentObjectiveContextBlock(),
-            previousActionsBlock: BuildMemoryBlock(8)
-        );
-
-        await LogPlannerPromptAsync("suggest_next_move", prompt);
-
-        string result = await _plannerLlm.CompleteAsync(
-            prompt,
-            maxTokens: 24,
-            temperature: 0.2f,
-            topP: 0.9f
-        );
-
-        return string.IsNullOrWhiteSpace(result)
-            ? "No suggestion."
-            : result.Trim();
-    }
-
-    private async Task<string> UpdatePlanAsync(GameState state)
-    {
-        string updated = await CompletePlanAsync(
-            state,
-            objective:
-                "Regenerate the rationale after the most recent action.\n" +
-                "Rationale is freeform and can include any useful ideas, priorities, or hypotheses.\n" +
-                "Keep it concise and practical.\n" +
-                "Output rationale lines only.",
-            includeCurrentPlan: true,
-            memoryRecent: 8,
-            temperature: 0.2f,
-            topP: 0.8f
-        );
-
-        return string.IsNullOrWhiteSpace(updated)
-            ? (_plan ?? string.Empty)
-            : updated;
-    }
-
-    private async Task<string> CompletePlanAsync(
-        GameState state,
-        string objective,
-        string? userRequest = null,
-        bool includeCurrentPlan = false,
-        int memoryRecent = 8,
-        float temperature = 0.3f,
-        float topP = 0.85f)
-    {
-        string prompt = BuildPlanPrompt(state, objective, userRequest, includeCurrentPlan, memoryRecent);
-        await LogPlannerPromptAsync("plan_rationale", prompt);
-
-        string result = await _plannerLlm.CompleteAsync(
-            prompt,
-            maxTokens: 160,
-            temperature: temperature,
-            topP: topP
-        );
-
-        return (result ?? string.Empty).Trim();
-    }
-
-    private string BuildPlanPrompt(
-        GameState state,
-        string objective,
-        string? userRequest,
-        bool includeCurrentPlan,
-        int memoryRecent)
-    {
-        string requestBlock = string.IsNullOrWhiteSpace(userRequest)
-            ? ""
-            : "User request:\n" + userRequest.Trim() + "\n\n";
-
-        string currentRationaleBlock = includeCurrentPlan
-            ? BuildCurrentRationaleBlock()
-            : "";
-
-        return AgentPrompts.BuildPlanPrompt(
-            baseSystemPrompt: BaseSystemPrompt,
-            requestBlock: requestBlock,
-            stateMarkdown: state.ToLLMMarkdown(),
-            currentObjectiveBlock: BuildCurrentObjectiveBlock(),
-            previousActionsBlock: BuildMemoryBlock(memoryRecent),
-            currentRationaleBlock: currentRationaleBlock,
-            objective: objective
-        );
-    }
-
     public string BuildMemoryBlock(int? maxRecent = null)
     {
         if (_memory.Count == 0)
@@ -766,116 +555,6 @@ AVAILABLE MISSIONS
         return "Previous actions:\n" +
                string.Join("\n", lines) +
                "\n\n";
-    }
-
-    private string BuildAvailableActionsBlock(GameState state, bool onlyAvailable)
-    {
-        var help = _commands
-            .Where(c => !onlyAvailable || c.IsAvailable(state))
-            .Select(c => c.BuildHelp(state))
-            .ToList();
-
-        if (help.Count == 0)
-            return onlyAvailable
-                ? "Available actions:\n- none\n\n"
-                : "All actions:\n- none\n\n";
-
-        var heading = onlyAvailable ? "Available actions:" : "All actions:";
-        return heading + "\n" + string.Join("\n", help) + "\n\n";
-    }
-
-    private IEnumerable<ICommand> GetCandidateCommands(GameState state, bool onlyAvailable)
-    {
-        return onlyAvailable
-            ? _commands.Where(c => c.IsAvailable(state))
-            : _commands;
-    }
-
-    private string BuildCurrentRationaleBlock()
-    {
-        if (string.IsNullOrWhiteSpace(_plan))
-            return "Current rationale:\n- none\n\n";
-
-        return "Current rationale:\n" +
-               _plan.Trim() +
-               "\n\n";
-    }
-
-    private string BuildCurrentObjectiveContextBlock()
-    {
-        if (string.IsNullOrWhiteSpace(_objective))
-            return "";
-
-        return "Current objective:\n- " + _objective.Trim() + "\n\n";
-    }
-
-    private string BuildCurrentObjectiveBlock()
-    {
-        if (!_hierarchicalPlanningEnabled)
-            return "";
-
-        if (string.IsNullOrWhiteSpace(_objective))
-            return "Current objective:\n- none\n\n";
-
-        return "Current objective:\n- " + _objective.Trim() + "\n\n";
-    }
-
-    private async Task<string> GenerateObjectiveAsync(GameState state)
-    {
-        string prompt = AgentPrompts.BuildObjectivePrompt(
-            baseSystemPrompt: BaseSystemPrompt,
-            stateMarkdown: state.ToLLMMarkdown(),
-            allActionsBlock: BuildAvailableActionsBlock(state, onlyAvailable: false),
-            previousActionsBlock: BuildMemoryBlock(8)
-        );
-
-        await LogPlannerPromptAsync("generate_objective", prompt);
-
-        string result = await _plannerLlm.CompleteAsync(
-            prompt,
-            maxTokens: 48,
-            temperature: 0.2f,
-            topP: 0.9f
-        );
-
-        return ParseObjective(result);
-    }
-
-    private async Task<string> GenerateObjectiveFromUserInputAsync(string input, GameState state)
-    {
-        string prompt = AgentPrompts.BuildObjectiveFromUserInputPrompt(
-            baseSystemPrompt: BaseSystemPrompt,
-            userInput: input.Trim(),
-            stateMarkdown: state.ToLLMMarkdown()
-        );
-
-        await LogPlannerPromptAsync("generate_objective_from_user_input", prompt);
-
-        string result = await _plannerLlm.CompleteAsync(
-            prompt,
-            maxTokens: 48,
-            temperature: 0.2f,
-            topP: 0.9f
-        );
-
-        return ParseObjective(result);
-    }
-
-    private static string ParseObjective(string raw)
-    {
-        if (string.IsNullOrWhiteSpace(raw))
-            return "";
-
-        var lines = raw
-            .Split('\n', StringSplitOptions.RemoveEmptyEntries)
-            .Select(l => l.Trim())
-            .Where(l => !string.IsNullOrWhiteSpace(l))
-            .ToArray();
-
-        if (lines.Length == 0)
-            return "";
-
-        return string.Join('\n', lines);
     }
 
     private static string ExtractScript(string raw)
@@ -987,56 +666,6 @@ AVAILABLE MISSIONS
         {
             // Script normalization logging should never block gameplay.
         }
-    }
-
-    private bool IsValidCommandForCurrentState(CommandResult result, GameState state)
-    {
-        if (string.IsNullOrWhiteSpace(result.Action))
-            return false;
-
-        if (!_commandMap.TryGetValue(result.Action, out var command))
-            return false;
-
-        var activeCommands = GetCandidateCommands(state, onlyAvailable: false)
-            .Select(c => c.Name)
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
-
-        if (!activeCommands.Contains(result.Action))
-            return false;
-
-        return command.IsAvailable(state);
-    }
-
-    private void AddInvalidCommandMemory(CommandResult result)
-    {
-        var memoryResult = new CommandResult
-        {
-            Action = string.IsNullOrWhiteSpace(result.Action) ? "<empty>" : result.Action.Trim(),
-            Arg1 = result.Arg1,
-            Quantity = result.Quantity
-        };
-
-        AddMemory(memoryResult, "invalid command");
-    }
-
-    private bool IsPlanEmpty()
-    {
-        return string.IsNullOrWhiteSpace(_plan);
-    }
-
-    private CommandResult Parse(string output)
-    {
-        var parts = output
-            .Split(' ', StringSplitOptions.RemoveEmptyEntries);
-
-        return new CommandResult
-        {
-            Action = parts.ElementAtOrDefault(0) ?? "",
-            Arg1 = parts.ElementAtOrDefault(1),
-            Quantity = int.TryParse(parts.ElementAtOrDefault(2), out int n)
-                ? n
-                : null
-        };
     }
 
     private static string FormatAction(ActionMemory m)

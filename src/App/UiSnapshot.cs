@@ -10,7 +10,6 @@ public sealed record UiSnapshot(
     IReadOnlyList<string> ExecutionStatusLines,
     string? ControlInput,
     int? CurrentScriptLine,
-    IReadOnlyList<string> Actions,
     string? LastGenerationPrompt,
     IReadOnlyList<BotTab> Bots,
     string? ActiveBotId

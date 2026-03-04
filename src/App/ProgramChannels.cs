@@ -43,7 +43,6 @@ public sealed class ProgramChannels
             Channel.CreateUnbounded<AddBotRequest>(),
             Channel.CreateUnbounded<UiSnapshot>());
 
-        ui.SetStatusReader(channels.Status.Reader);
         ui.SetControlInputWriter(channels.ControlInput.Writer);
         ui.SetGenerateScriptWriter(channels.GenerateScript.Writer);
         ui.SetSaveExampleWriter(channels.SaveExample.Writer);

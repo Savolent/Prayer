@@ -18,10 +18,10 @@ public class BotWindow
     }
 
     private TextView _state;
-    private ListView _objective;
+    private ListView _scriptLinesList;
     private ListView _memory;
     private TextView _input;
-    private Button _changeObjectiveButton;
+    private Button _editScriptButton;
     private Button _useMissionPromptButton;
     private Button _saveExampleButton;
     private Button _executeButton;
@@ -32,7 +32,6 @@ public class BotWindow
     private ChannelWriter<string>? _generateScriptWriter;
     private ChannelWriter<bool>? _saveExampleWriter;
     private ChannelWriter<bool>? _executeScriptWriter;
-    private ChannelReader<string>? _statusReader;
     private ChannelWriter<string>? _switchBotWriter;
     private ChannelWriter<AddBotRequest>? _addBotWriter;
 
@@ -47,7 +46,7 @@ public class BotWindow
     private Button _shipyardTabButton;
     private Button _cantinaTabButton;
     private StateTab _selectedStateTab = StateTab.Space;
-    private FrameView _objectiveFrame;
+    private FrameView _scriptFrame;
     private FrameView _memoryFrame;
     private FrameView _inputFrame;
     private ColorScheme _scriptSideScheme;
@@ -86,11 +85,6 @@ public class BotWindow
     public void SetExecuteScriptWriter(ChannelWriter<bool> writer)
     {
         _executeScriptWriter = writer;
-    }
-
-    public void SetStatusReader(ChannelReader<string> reader)
-    {
-        _statusReader = reader;
     }
 
     public void SetSwitchBotWriter(ChannelWriter<string> writer)
@@ -302,7 +296,7 @@ public class BotWindow
         };
         _executionStatusFrame.Add(_executionStatusList);
 
-        _objectiveFrame = new FrameView("Script")
+        _scriptFrame = new FrameView("Script")
         {
             X = Pos.Right(stateFrame),
             Y = 0,
@@ -311,7 +305,7 @@ public class BotWindow
             ColorScheme = _scriptSideScheme
         };
 
-        _objective = new ListView()
+        _scriptLinesList = new ListView()
         {
             Width = Dim.Fill(),
             Height = Dim.Fill(2)
@@ -336,18 +330,18 @@ public class BotWindow
         };
         _executeButton.Clicked += ExecuteScriptNow;
 
-        _changeObjectiveButton = new Button("Edit Script")
+        _editScriptButton = new Button("Edit Script")
         {
             X = 0,
             Y = Pos.AnchorEnd(1),
             Width = 16,
             Height = 1
         };
-        _changeObjectiveButton.Clicked += OpenObjectiveEditor;
+        _editScriptButton.Clicked += OpenScriptEditor;
 
         _useMissionPromptButton = new Button("Mission -> Prompt")
         {
-            X = Pos.Right(_changeObjectiveButton) + 1,
+            X = Pos.Right(_editScriptButton) + 1,
             Y = Pos.AnchorEnd(1),
             Width = 18,
             Height = 1
@@ -363,17 +357,17 @@ public class BotWindow
         };
         _saveExampleButton.Clicked += SaveCurrentScriptAsExample;
 
-        _objectiveFrame.Add(_objective);
-        _objectiveFrame.Add(_loopCheckBox);
-        _objectiveFrame.Add(_executeButton);
-        _objectiveFrame.Add(_changeObjectiveButton);
-        _objectiveFrame.Add(_useMissionPromptButton);
-        _objectiveFrame.Add(_saveExampleButton);
+        _scriptFrame.Add(_scriptLinesList);
+        _scriptFrame.Add(_loopCheckBox);
+        _scriptFrame.Add(_executeButton);
+        _scriptFrame.Add(_editScriptButton);
+        _scriptFrame.Add(_useMissionPromptButton);
+        _scriptFrame.Add(_saveExampleButton);
 
         _memoryFrame = new FrameView("Memory")
         {
             X = Pos.Right(stateFrame),
-            Y = Pos.Bottom(_objectiveFrame),
+            Y = Pos.Bottom(_scriptFrame),
             Width = 48,
             Height = Dim.Fill(5),
             ColorScheme = _scriptSideScheme
@@ -413,7 +407,7 @@ public class BotWindow
             }
         };
 
-        _win.Add(_playerFrame, _topInfoBar, stateFrame, _executionStatusFrame, _memoryFrame, _objectiveFrame, _inputFrame);
+        _win.Add(_playerFrame, _topInfoBar, stateFrame, _executionStatusFrame, _memoryFrame, _scriptFrame, _inputFrame);
         Application.Top.Add(_win);
 
         ApplyScriptLayout();
@@ -431,21 +425,6 @@ public class BotWindow
                 args.Handled = true;
             }
         };
-
-        // -----------------------------
-        // STATUS CHANNEL
-        // -----------------------------
-        Application.MainLoop.AddTimeout(TimeSpan.FromMilliseconds(100), _ =>
-        {
-            if (_statusReader != null)
-            {
-                while (_statusReader.TryRead(out var status))
-                {
-                    // Drain legacy status updates; execution statuses are rendered via snapshots.
-                }
-            }
-            return true;
-        });
 
         try
         {
@@ -470,7 +449,6 @@ public class BotWindow
         IReadOnlyList<string> executionStatusLines,
         string? controlInput,
         int? currentScriptLine,
-        IReadOnlyList<string> actions,
         string? lastGenerationPrompt,
         IReadOnlyList<BotTab> bots,
         string? activeBotId)
@@ -508,7 +486,7 @@ public class BotWindow
             SetListSourcePreserveScroll(_executionStatusList, executionDisplay);
             if (string.IsNullOrWhiteSpace(controlInput))
             {
-                SetListSourcePreserveScroll(_objective, new List<string>
+                SetListSourcePreserveScroll(_scriptLinesList, new List<string>
                 {
                     "(no script loaded)"
                 });
@@ -528,12 +506,10 @@ public class BotWindow
                     })
                     .ToList();
 
-                SetListSourcePreserveScroll(_objective, objectiveLines.Count > 0
+                SetListSourcePreserveScroll(_scriptLinesList, objectiveLines.Count > 0
                     ? objectiveLines
                     : new List<string> { controlInput.Trim() });
             }
-
-            _ = actions;
         });
     }
 
@@ -548,7 +524,7 @@ public class BotWindow
         _input.SetFocus();
     }
 
-    private void OpenObjectiveEditor()
+    private void OpenScriptEditor()
     {
         string tempFile = Path.Combine(
             Path.GetTempPath(),
@@ -852,13 +828,13 @@ public class BotWindow
 
     private void ApplyScriptLayout()
     {
-        _objectiveFrame.ColorScheme = _scriptSideScheme;
+        _scriptFrame.ColorScheme = _scriptSideScheme;
         _memoryFrame.ColorScheme = _scriptSideScheme;
         _inputFrame.ColorScheme = _scriptSideScheme;
-        _objectiveFrame.Height = Dim.Percent(58);
+        _scriptFrame.Height = Dim.Percent(58);
         _memoryFrame.Height = Dim.Fill(5);
-        _objectiveFrame.Title = "Script";
-        _changeObjectiveButton.Text = "Edit Script";
+        _scriptFrame.Title = "Script";
+        _editScriptButton.Text = "Edit Script";
         _executeButton.Visible = true;
         _saveExampleButton.Visible = true;
     }
