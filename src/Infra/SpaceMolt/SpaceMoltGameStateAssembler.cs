@@ -34,32 +34,16 @@ internal sealed class SpaceMoltGameStateAssembler
 
         var currentPoiObj = SpaceMoltApiTransport.RequireObjectProperty(systemResult, "poi", "get_system");
 
-        var currentPOI = new POIInfo
-        {
-            Id = currentPoiObj.GetProperty("id").GetString() ?? "",
-            Name = currentPoiObj.GetProperty("name").GetString() ?? "",
-            Type = currentPoiObj.GetProperty("type").GetString() ?? "",
-            HasBase = currentPoiObj.TryGetProperty("has_base", out var hb) && hb.GetBoolean(),
-            BaseId = currentPoiObj.TryGetProperty("base_id", out var bid) ? bid.GetString() : null,
-            BaseName = currentPoiObj.TryGetProperty("base_name", out var bn) ? bn.GetString() : null,
-            Online = currentPoiObj.TryGetProperty("online", out var on) ? on.GetInt32() : 0
-        };
+        var currentPOI = ParsePoiInfo(currentPoiObj, currentSystem);
 
-        var pois = systemObj
-            .GetProperty("pois")
-            .EnumerateArray()
-            .Where(p => p.GetProperty("id").GetString() != currentPOI.Id)
-            .Select(p => new POIInfo
-            {
-                Id = p.GetProperty("id").GetString() ?? "",
-                Name = p.GetProperty("name").GetString() ?? "",
-                Type = p.GetProperty("type").GetString() ?? "",
-                HasBase = p.TryGetProperty("has_base", out var hb2) && hb2.GetBoolean(),
-                BaseId = p.TryGetProperty("base_id", out var bid2) ? bid2.GetString() : null,
-                BaseName = p.TryGetProperty("base_name", out var bn2) ? bn2.GetString() : null,
-                Online = p.TryGetProperty("online", out var on2) ? on2.GetInt32() : 0
-            })
-            .ToArray();
+        var pois = systemObj.TryGetProperty("pois", out var poisArray) &&
+                   poisArray.ValueKind == JsonValueKind.Array
+            ? poisArray
+                .EnumerateArray()
+                .Select(p => ParsePoiInfo(p, currentSystem))
+                .Where(p => !string.Equals(p.Id, currentPOI.Id, StringComparison.Ordinal))
+                .ToArray()
+            : Array.Empty<POIInfo>();
 
         await _owner.ObserveSeenPoisAsync(
             currentSystem,
@@ -283,5 +267,84 @@ internal sealed class SpaceMoltGameStateAssembler
         state.ChatMessages = _owner.SnapshotChatMessages(maxCount: 5);
 
         return state;
+    }
+
+    private static POIInfo ParsePoiInfo(JsonElement poiObj, string fallbackSystemId)
+    {
+        var info = new POIInfo
+        {
+            Id = TryGetString(poiObj, "id") ?? "",
+            SystemId = TryGetString(poiObj, "system_id") ?? fallbackSystemId,
+            Name = TryGetString(poiObj, "name") ?? "",
+            Type = TryGetString(poiObj, "type") ?? "",
+            Description = TryGetString(poiObj, "description") ?? "",
+            Hidden = TryGetBool(poiObj, "hidden") ?? false,
+            HasBase = TryGetBool(poiObj, "has_base") ?? false,
+            BaseId = TryGetString(poiObj, "base_id"),
+            BaseName = TryGetString(poiObj, "base_name"),
+            Online = TryGetInt(poiObj, "online") ?? 0,
+            Resources = ParsePoiResources(poiObj)
+        };
+
+        if (poiObj.TryGetProperty("position", out var positionObj) &&
+            positionObj.ValueKind == JsonValueKind.Object)
+        {
+            info.X = TryGetDouble(positionObj, "x");
+            info.Y = TryGetDouble(positionObj, "y");
+        }
+
+        return info;
+    }
+
+    private static PoiResourceInfo[] ParsePoiResources(JsonElement poiObj)
+    {
+        if (!poiObj.TryGetProperty("resources", out var resources) ||
+            resources.ValueKind != JsonValueKind.Array)
+        {
+            return Array.Empty<PoiResourceInfo>();
+        }
+
+        return resources
+            .EnumerateArray()
+            .Where(r => r.ValueKind == JsonValueKind.Object)
+            .Select(r => new PoiResourceInfo
+            {
+                ResourceId = TryGetString(r, "resource_id") ?? "",
+                Name = TryGetString(r, "name") ?? "",
+                RichnessText = TryGetString(r, "richness") ?? "",
+                Richness = TryGetInt(r, "richness"),
+                Remaining = TryGetInt(r, "remaining"),
+                RemainingDisplay = TryGetString(r, "remaining_display") ?? ""
+            })
+            .ToArray();
+    }
+
+    private static string? TryGetString(JsonElement obj, string property)
+    {
+        return obj.TryGetProperty(property, out var el) && el.ValueKind == JsonValueKind.String
+            ? el.GetString()
+            : null;
+    }
+
+    private static int? TryGetInt(JsonElement obj, string property)
+    {
+        return obj.TryGetProperty(property, out var el) && el.ValueKind == JsonValueKind.Number && el.TryGetInt32(out var value)
+            ? value
+            : null;
+    }
+
+    private static double? TryGetDouble(JsonElement obj, string property)
+    {
+        return obj.TryGetProperty(property, out var el) && el.ValueKind == JsonValueKind.Number && el.TryGetDouble(out var value)
+            ? value
+            : null;
+    }
+
+    private static bool? TryGetBool(JsonElement obj, string property)
+    {
+        return obj.TryGetProperty(property, out var el) &&
+               (el.ValueKind == JsonValueKind.True || el.ValueKind == JsonValueKind.False)
+            ? el.GetBoolean()
+            : null;
     }
 }

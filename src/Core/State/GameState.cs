@@ -393,10 +393,24 @@ CARGO
             return "- _(none)_";
 
         return string.Join("\n", pois.Select(p =>
+        {
+            string resources = "";
+            if (p.Resources != null && p.Resources.Length > 0)
+            {
+                string resourceList = string.Join(", ", p.Resources
+                    .Where(r => !string.IsNullOrWhiteSpace(r.ResourceId))
+                    .Take(3)
+                    .Select(r => r.ResourceId));
+                if (!string.IsNullOrWhiteSpace(resourceList))
+                    resources = $" | Resources: {resourceList}";
+            }
+
+            return
             $"- `{p.Id}` ({p.Type})" +
             (p.HasBase ? " | Dockable" : "") +
-            (p.IsMiningTarget ? " | Mining" : "")
-        ));
+            (p.IsMiningTarget ? " | Mining" : "") +
+            resources;
+        }));
     }
 
     internal static string FormatCargo(Dictionary<string, ItemStack> cargo)
@@ -929,12 +943,18 @@ public class ItemStack
 public class POIInfo
 {
     public string Id { get; set; } = "";
+    public string SystemId { get; set; } = "";
     public string Name { get; set; } = "";
     public string Type { get; set; } = "";
+    public string Description { get; set; } = "";
+    public bool Hidden { get; set; }
+    public double? X { get; set; }
+    public double? Y { get; set; }
     public bool HasBase { get; set; }
     public string? BaseId { get; set; }
     public string? BaseName { get; set; }
     public int Online { get; set; }
+    public PoiResourceInfo[] Resources { get; set; } = Array.Empty<PoiResourceInfo>();
 
     public bool IsMiningTarget =>
         Type == "asteroid_belt" ||
@@ -943,6 +963,16 @@ public class POIInfo
         Type == "ice_field";
 
     public bool IsStation => Type == "station";
+}
+
+public class PoiResourceInfo
+{
+    public string ResourceId { get; set; } = "";
+    public string Name { get; set; } = "";
+    public string RichnessText { get; set; } = "";
+    public int? Richness { get; set; }
+    public int? Remaining { get; set; }
+    public string RemainingDisplay { get; set; } = "";
 }
 
 public class MissionInfo

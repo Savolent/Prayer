@@ -7,6 +7,7 @@ public static class CommandCatalog
     public static IReadOnlyList<ICommand> Space { get; } = new List<ICommand>
     {
         new MineCommand(),
+        new SurveyCommand(),
         new GoCommand(),
         new AcceptMissionCommand(),
         new AbandonMissionCommand(),
