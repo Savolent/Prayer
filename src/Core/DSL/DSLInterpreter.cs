@@ -5,7 +5,8 @@ using System.Text;
 
 public static class DslInterpreter
 {
-    private const int RepeatUnrollIterations = 1000;
+    internal const string RepeatStartAction = "__repeat_start";
+    internal const string RepeatEndAction = "__repeat_end";
 
     public static string NormalizeScript(string dslScript, GameState? state = null)
     {
@@ -25,28 +26,8 @@ public static class DslInterpreter
             return string.Empty;
 
         var sb = new StringBuilder();
-
-        foreach (var cmd in commands)
-        {
-            if (string.IsNullOrWhiteSpace(cmd.Action))
-                continue;
-
-            sb.Append(cmd.Action);
-
-            if (!string.IsNullOrWhiteSpace(cmd.Arg1))
-            {
-                sb.Append(' ');
-                sb.Append(cmd.Arg1);
-            }
-
-            if (cmd.Quantity.HasValue)
-            {
-                sb.Append(' ');
-                sb.Append(cmd.Quantity.Value);
-            }
-
-            sb.AppendLine(";");
-        }
+        int index = 0;
+        AppendRendered(commands, ref index, sb, indent: 0, closeRepeatId: null);
 
         return sb.ToString();
     }
@@ -84,14 +65,16 @@ public static class DslInterpreter
             throw new ArgumentNullException(nameof(tree));
 
         var result = new List<CommandResult>();
-        InterpretNodes(tree.Statements, state, result);
+        int nextRepeatId = 0;
+        InterpretNodes(tree.Statements, state, result, ref nextRepeatId);
         return result;
     }
 
     private static void InterpretNodes(
         IReadOnlyList<DslAstNode> nodes,
         GameState? state,
-        List<CommandResult> output)
+        List<CommandResult> output,
+        ref int nextRepeatId)
     {
         foreach (var node in nodes)
         {
@@ -116,14 +99,86 @@ public static class DslInterpreter
                 }
                 case DslRepeatAstNode repeatNode:
                 {
-                    for (int i = 0; i < RepeatUnrollIterations; i++)
-                        InterpretNodes(repeatNode.Body ?? Array.Empty<DslAstNode>(), state, output);
+                    string repeatId = $"r{++nextRepeatId}";
+                    output.Add(new CommandResult
+                    {
+                        Action = RepeatStartAction,
+                        Arg1 = repeatId,
+                        SourceLine = repeatNode.SourceLine
+                    });
+                    InterpretNodes(
+                        repeatNode.Body ?? Array.Empty<DslAstNode>(),
+                        state,
+                        output,
+                        ref nextRepeatId);
+                    output.Add(new CommandResult
+                    {
+                        Action = RepeatEndAction,
+                        Arg1 = repeatId,
+                        SourceLine = repeatNode.SourceLine
+                    });
                     break;
                 }
                 default:
                     throw new FormatException("Unknown DSL AST node.");
             }
         }
+    }
+
+    private static void AppendRendered(
+        IReadOnlyList<CommandResult> commands,
+        ref int index,
+        StringBuilder sb,
+        int indent,
+        string? closeRepeatId)
+    {
+        while (index < commands.Count)
+        {
+            var cmd = commands[index++];
+            if (string.IsNullOrWhiteSpace(cmd.Action))
+                continue;
+
+            if (string.Equals(cmd.Action, RepeatStartAction, StringComparison.Ordinal))
+            {
+                AppendIndent(sb, indent);
+                sb.AppendLine("repeat {");
+                AppendRendered(commands, ref index, sb, indent + 2, cmd.Arg1);
+                AppendIndent(sb, indent);
+                sb.AppendLine("}");
+                continue;
+            }
+
+            if (string.Equals(cmd.Action, RepeatEndAction, StringComparison.Ordinal))
+            {
+                if (closeRepeatId != null && string.Equals(cmd.Arg1, closeRepeatId, StringComparison.Ordinal))
+                    return;
+
+                // Ignore unmatched control markers when rendering normalized scripts.
+                continue;
+            }
+
+            AppendIndent(sb, indent);
+            sb.Append(cmd.Action);
+            if (!string.IsNullOrWhiteSpace(cmd.Arg1))
+            {
+                sb.Append(' ');
+                sb.Append(cmd.Arg1);
+            }
+
+            if (cmd.Quantity.HasValue)
+            {
+                sb.Append(' ');
+                sb.Append(cmd.Quantity.Value);
+            }
+
+            sb.AppendLine(";");
+        }
+    }
+
+    private static void AppendIndent(StringBuilder sb, int indent)
+    {
+        if (indent > 0)
+            sb.Append(' ', indent);
     }
 
     private static CommandResult ParseStep(string step)

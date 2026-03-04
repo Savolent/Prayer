@@ -14,6 +14,8 @@ public sealed class CommandExecutionEngine
     private string? _script;
     private int? _currentScriptLine;
     private Queue<CommandResult> _scriptQueue = new();
+    private readonly Dictionary<string, List<CommandResult>> _repeatBodies =
+        new(StringComparer.Ordinal);
     private bool _isHalted;
     private IMultiTurnCommand? _activeCommand;
     private CommandResult? _activeCommandResult;
@@ -54,6 +56,7 @@ public sealed class CommandExecutionEngine
         for (int i = 0; i < steps.Count; i++)
             steps[i].SourceLine = i + 1;
 
+        BuildRepeatBodyIndex(steps);
         _scriptQueue = new Queue<CommandResult>(steps);
         _isHalted = false;
 
@@ -270,6 +273,9 @@ public sealed class CommandExecutionEngine
         {
             var next = _scriptQueue.Dequeue();
 
+            if (TryHandleRuntimeRepeatControl(next))
+                continue;
+
             if (string.IsNullOrWhiteSpace(next.Action) || !_commandMap.ContainsKey(next.Action))
             {
                 AddMemory(next, "invalid script command");
@@ -283,6 +289,83 @@ public sealed class CommandExecutionEngine
 
         Halt("Script complete: waiting for input");
         return Task.FromResult<CommandResult?>(null);
+    }
+
+    private bool TryHandleRuntimeRepeatControl(CommandResult next)
+    {
+        if (string.IsNullOrWhiteSpace(next.Action))
+            return false;
+
+        if (string.Equals(next.Action, DslInterpreter.RepeatStartAction, StringComparison.Ordinal))
+            return true;
+
+        if (!string.Equals(next.Action, DslInterpreter.RepeatEndAction, StringComparison.Ordinal))
+            return false;
+
+        var repeatId = (next.Arg1 ?? string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(repeatId))
+            return true;
+
+        if (!_repeatBodies.TryGetValue(repeatId, out var body) || body.Count == 0)
+            return true;
+
+        var replay = body
+            .Select(CloneStep)
+            .Append(CloneStep(next))
+            .Concat(_scriptQueue);
+
+        _scriptQueue = new Queue<CommandResult>(replay);
+        return true;
+    }
+
+    private void BuildRepeatBodyIndex(IReadOnlyList<CommandResult> steps)
+    {
+        _repeatBodies.Clear();
+
+        var stack = new Stack<(string RepeatId, int StartIndex)>();
+
+        for (int i = 0; i < steps.Count; i++)
+        {
+            var step = steps[i];
+            var action = step.Action ?? string.Empty;
+            var repeatId = (step.Arg1 ?? string.Empty).Trim();
+
+            if (string.Equals(action, DslInterpreter.RepeatStartAction, StringComparison.Ordinal))
+            {
+                if (!string.IsNullOrWhiteSpace(repeatId))
+                    stack.Push((repeatId, i));
+                continue;
+            }
+
+            if (!string.Equals(action, DslInterpreter.RepeatEndAction, StringComparison.Ordinal))
+                continue;
+
+            if (string.IsNullOrWhiteSpace(repeatId) || stack.Count == 0)
+                continue;
+
+            var open = stack.Pop();
+            if (!string.Equals(open.RepeatId, repeatId, StringComparison.Ordinal))
+                continue;
+
+            var body = steps
+                .Skip(open.StartIndex + 1)
+                .Take(i - open.StartIndex - 1)
+                .Select(CloneStep)
+                .ToList();
+
+            _repeatBodies[repeatId] = body;
+        }
+    }
+
+    private static CommandResult CloneStep(CommandResult step)
+    {
+        return new CommandResult
+        {
+            Action = step.Action,
+            Arg1 = step.Arg1,
+            Quantity = step.Quantity,
+            SourceLine = step.SourceLine
+        };
     }
 
     private void AddMemory(CommandResult result, string? message)
