@@ -14,7 +14,7 @@ Detailed implementation plan remains in `MIDDLE_RUNTIME_SPLIT_PLAN.md`.
 - [x] Step 6: Extract runtime-state builder from SpaceMolt assembler
 - [x] Step 7: Introduce `IRuntimeStateProvider` and wire runtime to it
 - [x] Step 8: Create middle-runtime host facade
-- [ ] Step 9: Move bot session ownership into runtime host
+- [x] Step 9: Move bot session ownership into runtime host
 - [ ] Step 10: Enforce UI/runtime bot boundary (`{bot_id, command}` only)
 
 ## Step 0 completion evidence
@@ -69,6 +69,12 @@ Detailed implementation plan remains in `MIDDLE_RUNTIME_SPLIT_PLAN.md`.
 - `src/MiddleRuntime/Host/RuntimeHost.cs` added as middle-runtime facade for orchestration/loop execution.
 - `src/App/Program.cs` now wires bot execution through `RuntimeHost` instead of directly instantiating runtime internals.
 - `src/Core/BotRuntime.cs` reduced to a compatibility shim delegating to `RuntimeHost`.
+
+## Step 9 completion evidence
+
+- `src/App/Program.cs` composition root now constructs `RuntimeHost` during bot session creation, alongside infra client and adapters.
+- `src/App/BotSession.cs` stores the constructed `RuntimeHost`; worker startup executes `session.RuntimeHost.RunAsync(...)` instead of composing runtime internals at run time.
+- Checkpoint restore path remains intact in `Program` (`checkpointStore.Load(...)` + `agent.TryRestoreCheckpoint(...)`).
 
 ## Notes
 

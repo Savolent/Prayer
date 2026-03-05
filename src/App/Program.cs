@@ -382,15 +382,35 @@ class Program
 
                 LogAuth($"{flowLabel} | {label} | session_ready | {totalTimer.ElapsedMilliseconds}ms");
 
-                return (
-                    new BotSession(
-                        Guid.NewGuid().ToString("N"),
-                        label,
-                        agent,
-                        client,
-                        runtimeTransport,
-                        runtimeStateProvider),
-                    password);
+                var session = new BotSession(
+                    Guid.NewGuid().ToString("N"),
+                    label,
+                    agent,
+                    client,
+                    runtimeTransport,
+                    runtimeStateProvider);
+
+                session.RuntimeHost = new RuntimeHost(
+                    session.Label,
+                    session.Agent,
+                    session.Client,
+                    session.RuntimeStateProvider ?? new SpaceMoltRuntimeStateProvider(session.Client),
+                    session.ControlInputQueue.Reader,
+                    session.GenerateScriptQueue.Reader,
+                    session.SaveExampleQueue.Reader,
+                    session.HaltNowQueue.Reader,
+                    () => session.LoopEnabled,
+                    () => session.LatestState,
+                    state => session.LatestState = state,
+                    () => session.LastHaltedSnapshotAt,
+                    value => session.LastHaltedSnapshotAt = value,
+                    state => snapshotPublisher.PublishSnapshot(session, state),
+                    message => AppendExecutionStatus(session, message),
+                    LogAuth,
+                    TriggerGlobalStop,
+                    ScriptGenerationMaxAttempts);
+
+                return (session, password);
             }
             catch (Exception ex)
             {
@@ -446,27 +466,10 @@ class Program
 
         Task RunBotLoopAsync(BotSession bot, CancellationToken token)
         {
-            var runtime = new RuntimeHost(
-                bot.Label,
-                bot.Agent,
-                bot.Client,
-                bot.RuntimeStateProvider ?? new SpaceMoltRuntimeStateProvider(bot.Client),
-                bot.ControlInputQueue.Reader,
-                bot.GenerateScriptQueue.Reader,
-                bot.SaveExampleQueue.Reader,
-                bot.HaltNowQueue.Reader,
-                () => bot.LoopEnabled,
-                () => bot.LatestState,
-                state => bot.LatestState = state,
-                () => bot.LastHaltedSnapshotAt,
-                value => bot.LastHaltedSnapshotAt = value,
-                state => snapshotPublisher.PublishSnapshot(bot, state),
-                message => AppendExecutionStatus(bot, message),
-                LogAuth,
-                TriggerGlobalStop,
-                ScriptGenerationMaxAttempts);
+            if (bot.RuntimeHost == null)
+                throw new InvalidOperationException($"Runtime host missing for bot '{bot.Label}'.");
 
-            return runtime.RunAsync(token);
+            return bot.RuntimeHost.RunAsync(token);
         }
 
         void StartBotWorker(BotSession session)
