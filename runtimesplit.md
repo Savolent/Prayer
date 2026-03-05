@@ -15,7 +15,7 @@ Detailed implementation plan remains in `MIDDLE_RUNTIME_SPLIT_PLAN.md`.
 - [x] Step 7: Introduce `IRuntimeStateProvider` and wire runtime to it
 - [x] Step 8: Create middle-runtime host facade
 - [x] Step 9: Move bot session ownership into runtime host
-- [ ] Step 10: Enforce UI/runtime bot boundary (`{bot_id, command}` only)
+- [x] Step 10: Enforce UI/runtime bot boundary (`{bot_id, command}` only)
 
 ## Step 0 completion evidence
 
@@ -75,6 +75,13 @@ Detailed implementation plan remains in `MIDDLE_RUNTIME_SPLIT_PLAN.md`.
 - `src/App/Program.cs` composition root now constructs `RuntimeHost` during bot session creation, alongside infra client and adapters.
 - `src/App/BotSession.cs` stores the constructed `RuntimeHost`; worker startup executes `session.RuntimeHost.RunAsync(...)` instead of composing runtime internals at run time.
 - Checkpoint restore path remains intact in `Program` (`checkpointStore.Load(...)` + `agent.TryRestoreCheckpoint(...)`).
+
+## Step 10 completion evidence
+
+- App/UI runtime action wiring consolidated to `RuntimeCommandRequest` (`{ bot_id, command, argument? }`) via `ProgramChannels.RuntimeCommands`.
+- Legacy app-level channels for control/generate/execute/halt/save-example were removed; runtime command dispatch now happens in one switch in `Program`.
+- Deprecated `src/Core/BotRuntime.cs` compatibility shim removed.
+- Architecture ownership and dependency direction documented in `docs/runtime-split/boundaries.md`.
 
 ## Notes
 

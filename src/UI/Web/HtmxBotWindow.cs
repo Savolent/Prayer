@@ -17,11 +17,7 @@ public sealed class HtmxBotWindow : IAppUi
     private bool _running;
     private HttpListener? _listener;
 
-    private ChannelWriter<string>? _controlInputWriter;
-    private ChannelWriter<string>? _generateScriptWriter;
-    private ChannelWriter<bool>? _saveExampleWriter;
-    private ChannelWriter<bool>? _executeScriptWriter;
-    private ChannelWriter<string>? _haltNowWriter;
+    private ChannelWriter<RuntimeCommandRequest>? _runtimeCommandWriter;
     private ChannelWriter<LoopUpdate>? _loopUpdateWriter;
     private ChannelWriter<string>? _switchBotWriter;
     private ChannelWriter<AddBotRequest>? _addBotWriter;
@@ -55,11 +51,7 @@ public sealed class HtmxBotWindow : IAppUi
         _modelsByProvider["llamacpp"] = new[] { "model" };
     }
 
-    public void SetControlInputWriter(ChannelWriter<string> writer) => _controlInputWriter = writer;
-    public void SetGenerateScriptWriter(ChannelWriter<string> writer) => _generateScriptWriter = writer;
-    public void SetSaveExampleWriter(ChannelWriter<bool> writer) => _saveExampleWriter = writer;
-    public void SetExecuteScriptWriter(ChannelWriter<bool> writer) => _executeScriptWriter = writer;
-    public void SetHaltNowWriter(ChannelWriter<string> writer) => _haltNowWriter = writer;
+    public void SetRuntimeCommandWriter(ChannelWriter<RuntimeCommandRequest> writer) => _runtimeCommandWriter = writer;
     public void SetLoopUpdateWriter(ChannelWriter<LoopUpdate> writer) => _loopUpdateWriter = writer;
     public void SetSwitchBotWriter(ChannelWriter<string> writer) => _switchBotWriter = writer;
     public void SetAddBotWriter(ChannelWriter<AddBotRequest> writer) => _addBotWriter = writer;
@@ -288,8 +280,15 @@ public sealed class HtmxBotWindow : IAppUi
         {
             var form = ReadForm(req);
             var prompt = GetValue(form, "prompt");
-            if (!string.IsNullOrWhiteSpace(prompt))
-                _generateScriptWriter?.TryWrite(prompt);
+            string? activeBotId;
+            lock (_lock) activeBotId = _snapshot.ActiveBotId;
+            if (!string.IsNullOrWhiteSpace(prompt) && !string.IsNullOrWhiteSpace(activeBotId))
+            {
+                _runtimeCommandWriter?.TryWrite(new RuntimeCommandRequest(
+                    activeBotId!,
+                    RuntimeCommandNames.GenerateScript,
+                    prompt));
+            }
             WriteNoContent(ctx.Response);
             return;
         }
@@ -302,7 +301,13 @@ public sealed class HtmxBotWindow : IAppUi
             var prompt = BuildActiveMissionObjectivesPrompt(
                 snapshot.ActiveMissionPrompts,
                 snapshot.CantinaStateMarkdown);
-            _generateScriptWriter?.TryWrite(prompt);
+            if (!string.IsNullOrWhiteSpace(snapshot.ActiveBotId))
+            {
+                _runtimeCommandWriter?.TryWrite(new RuntimeCommandRequest(
+                    snapshot.ActiveBotId!,
+                    RuntimeCommandNames.GenerateScript,
+                    prompt));
+            }
 
             WriteNoContent(ctx.Response);
             return;
@@ -312,15 +317,29 @@ public sealed class HtmxBotWindow : IAppUi
         {
             var form = ReadForm(req);
             var script = GetValue(form, "script");
-            if (!string.IsNullOrWhiteSpace(script))
-                _controlInputWriter?.TryWrite(script);
+            string? activeBotId;
+            lock (_lock) activeBotId = _snapshot.ActiveBotId;
+            if (!string.IsNullOrWhiteSpace(script) && !string.IsNullOrWhiteSpace(activeBotId))
+            {
+                _runtimeCommandWriter?.TryWrite(new RuntimeCommandRequest(
+                    activeBotId!,
+                    RuntimeCommandNames.SetScript,
+                    script));
+            }
             WriteNoContent(ctx.Response);
             return;
         }
 
         if (req.HttpMethod == "POST" && path == "/api/execute")
         {
-            _executeScriptWriter?.TryWrite(true);
+            string? activeBotId;
+            lock (_lock) activeBotId = _snapshot.ActiveBotId;
+            if (!string.IsNullOrWhiteSpace(activeBotId))
+            {
+                _runtimeCommandWriter?.TryWrite(new RuntimeCommandRequest(
+                    activeBotId!,
+                    RuntimeCommandNames.ExecuteScript));
+            }
             WriteNoContent(ctx.Response);
             return;
         }
@@ -330,14 +349,25 @@ public sealed class HtmxBotWindow : IAppUi
             string? targetBotId;
             lock (_lock) targetBotId = _snapshot.ActiveBotId;
             if (!string.IsNullOrWhiteSpace(targetBotId))
-                _haltNowWriter?.TryWrite(targetBotId);
+            {
+                _runtimeCommandWriter?.TryWrite(new RuntimeCommandRequest(
+                    targetBotId!,
+                    RuntimeCommandNames.Halt));
+            }
             WriteNoContent(ctx.Response);
             return;
         }
 
         if (req.HttpMethod == "POST" && path == "/api/save-example")
         {
-            _saveExampleWriter?.TryWrite(true);
+            string? activeBotId;
+            lock (_lock) activeBotId = _snapshot.ActiveBotId;
+            if (!string.IsNullOrWhiteSpace(activeBotId))
+            {
+                _runtimeCommandWriter?.TryWrite(new RuntimeCommandRequest(
+                    activeBotId!,
+                    RuntimeCommandNames.SaveExample));
+            }
             WriteNoContent(ctx.Response);
             return;
         }

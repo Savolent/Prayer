@@ -3,11 +3,7 @@ using System.Threading.Channels;
 
 public interface IAppUi
 {
-    void SetControlInputWriter(ChannelWriter<string> writer);
-    void SetGenerateScriptWriter(ChannelWriter<string> writer);
-    void SetSaveExampleWriter(ChannelWriter<bool> writer);
-    void SetExecuteScriptWriter(ChannelWriter<bool> writer);
-    void SetHaltNowWriter(ChannelWriter<string> writer);
+    void SetRuntimeCommandWriter(ChannelWriter<RuntimeCommandRequest> writer);
     void SetLoopUpdateWriter(ChannelWriter<LoopUpdate> writer);
     void SetSwitchBotWriter(ChannelWriter<string> writer);
     void SetAddBotWriter(ChannelWriter<AddBotRequest> writer);

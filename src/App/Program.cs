@@ -670,86 +670,66 @@ class Program
                         snapshotPublisher.PublishActiveSnapshot();
                     }
 
-                    while (channels.ControlInput.Reader.TryRead(out var newInput))
+                    while (channels.RuntimeCommands.Reader.TryRead(out var request))
                     {
-                        var active = GetActiveBot();
-                        if (active == null)
-                        {
-                            channels.Status.Writer.TryWrite("No active bot selected.");
-                            continue;
-                        }
-
-                        active.ControlInputQueue.Writer.TryWrite(newInput);
-                    }
-
-                    while (channels.GenerateScript.Reader.TryRead(out var generationInput))
-                    {
-                        var active = GetActiveBot();
-                        if (active == null)
-                        {
-                            channels.Status.Writer.TryWrite("No active bot selected.");
-                            continue;
-                        }
-
-                        active.GenerateScriptQueue.Writer.TryWrite(generationInput);
-                    }
-
-                    while (channels.SaveExample.Reader.TryRead(out _))
-                    {
-                        var active = GetActiveBot();
-                        if (active == null)
-                        {
-                            channels.Status.Writer.TryWrite("No active bot selected.");
-                            continue;
-                        }
-
-                        active.SaveExampleQueue.Writer.TryWrite(true);
-                    }
-
-                    while (channels.ExecuteScript.Reader.TryRead(out _))
-                    {
-                        var active = GetActiveBot();
-                        if (active == null)
-                        {
-                            channels.Status.Writer.TryWrite("No active bot selected.");
-                            continue;
-                        }
-
-                        var script = active.Agent.CurrentControlInput;
-                        if (string.IsNullOrWhiteSpace(script))
-                        {
-                            channels.Status.Writer.TryWrite("No script loaded.");
-                            continue;
-                        }
-
-                        active.ControlInputQueue.Writer.TryWrite(script);
-                        channels.Status.Writer.TryWrite($"Restarting script for {active.Label}");
-                    }
-
-                    while (channels.HaltNow.Reader.TryRead(out var targetBotId))
-                    {
-                        BotSession? target = null;
+                        BotSession? target;
                         lock (botLock)
                         {
-                            if (!string.IsNullOrWhiteSpace(targetBotId) &&
-                                botSessions.TryGetValue(targetBotId, out var byId))
-                            {
-                                target = byId;
-                            }
-                            else if (activeBotId != null &&
-                                     botSessions.TryGetValue(activeBotId, out var active))
-                            {
-                                target = active;
-                            }
+                            target = !string.IsNullOrWhiteSpace(request.BotId) &&
+                                     botSessions.TryGetValue(request.BotId, out var byId)
+                                ? byId
+                                : null;
                         }
 
                         if (target == null)
                         {
-                            channels.Status.Writer.TryWrite("No active bot selected.");
+                            channels.Status.Writer.TryWrite("Selected bot no longer exists.");
                             continue;
                         }
 
-                        target.HaltNowQueue.Writer.TryWrite(true);
+                        switch (request.Command)
+                        {
+                            case RuntimeCommandNames.SetScript:
+                            {
+                                var script = request.Argument ?? string.Empty;
+                                if (string.IsNullOrWhiteSpace(script))
+                                    continue;
+
+                                target.ControlInputQueue.Writer.TryWrite(script);
+                                break;
+                            }
+                            case RuntimeCommandNames.GenerateScript:
+                            {
+                                var prompt = request.Argument ?? string.Empty;
+                                if (string.IsNullOrWhiteSpace(prompt))
+                                    continue;
+
+                                target.GenerateScriptQueue.Writer.TryWrite(prompt);
+                                break;
+                            }
+                            case RuntimeCommandNames.SaveExample:
+                                target.SaveExampleQueue.Writer.TryWrite(true);
+                                break;
+                            case RuntimeCommandNames.ExecuteScript:
+                            {
+                                var script = target.Agent.CurrentControlInput;
+                                if (string.IsNullOrWhiteSpace(script))
+                                {
+                                    channels.Status.Writer.TryWrite("No script loaded.");
+                                    break;
+                                }
+
+                                target.ControlInputQueue.Writer.TryWrite(script);
+                                channels.Status.Writer.TryWrite($"Restarting script for {target.Label}");
+                                break;
+                            }
+                            case RuntimeCommandNames.Halt:
+                                target.HaltNowQueue.Writer.TryWrite(true);
+                                break;
+                            default:
+                                channels.Status.Writer.TryWrite($"Unknown runtime command: {request.Command}");
+                                break;
+                        }
                     }
 
                     await Task.Delay(50, cts.Token);
