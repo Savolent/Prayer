@@ -16,6 +16,7 @@ public static class AppPaths
     public static readonly string HttpBadRequestLogFile = Path.Combine(LogDir, "http_badrequest.log");
     public static readonly string PathfindLogFile = Path.Combine(LogDir, "pathfind.log");
     public static readonly string SpaceMoltApiLogFile = Path.Combine(LogDir, "spacemolt_api.log");
+    public static readonly string SpaceMoltApiStatsLogFile = Path.Combine(LogDir, "spacemolt_api_stats.log");
     public static readonly string AuthFlowLogFile = Path.Combine(LogDir, "auth_flow.log");
     public static readonly string AnalyzeMarketLogFile = Path.Combine(LogDir, "analyze_market.log");
     public static readonly string ItemCatalogLogFile = Path.Combine(LogDir, "item_catalog.log");

@@ -1,14 +1,62 @@
 using System.Collections.Concurrent;
+using System.Diagnostics;
+using System.Diagnostics.Metrics;
 using System.Text.Json;
 using System.Threading.Channels;
 using Contracts = Prayer.Contracts;
 
 var builder = WebApplication.CreateBuilder(args);
+builder.Logging.AddSimpleConsole(options =>
+{
+    options.SingleLine = true;
+    options.TimestampFormat = "yyyy-MM-dd HH:mm:ss.fff ";
+});
 builder.Services.AddSingleton<PrayerLlmRegistry>();
 builder.Services.AddSingleton<RuntimeSessionStore>();
 builder.Services.AddSingleton<PrayerPreferenceStore>();
 
 var app = builder.Build();
+var logger = app.Logger;
+
+app.Use(async (context, next) =>
+{
+    var started = Stopwatch.StartNew();
+    try
+    {
+        await next();
+    }
+    finally
+    {
+        started.Stop();
+        var elapsedMs = started.Elapsed.TotalMilliseconds;
+        var path = context.Request.Path.Value ?? "/";
+        var method = context.Request.Method;
+        var status = context.Response.StatusCode;
+        PrayerTelemetry.RecordHttpRequest(method, path, status, elapsedMs);
+
+        if (!path.Equals("/health", StringComparison.OrdinalIgnoreCase))
+        {
+            if (status >= 500 || elapsedMs >= PrayerDefaults.SlowRequestThresholdMs)
+            {
+                logger.LogWarning(
+                    "HTTP {Method} {Path} -> {StatusCode} in {ElapsedMs} ms",
+                    method,
+                    path,
+                    status,
+                    elapsedMs);
+            }
+            else
+            {
+                logger.LogDebug(
+                    "HTTP {Method} {Path} -> {StatusCode} in {ElapsedMs} ms",
+                    method,
+                    path,
+                    status,
+                    elapsedMs);
+            }
+        }
+    }
+});
 
 app.MapGet("/health", () => Results.Ok(new
 {
@@ -153,6 +201,14 @@ app.MapGet("/api/runtime/sessions/{id}/status", (string id, RuntimeSessionStore 
     return Results.Ok(session.GetStatusLines());
 });
 
+app.MapGet("/api/runtime/sessions/{id}/spacemolt/stats", (string id, RuntimeSessionStore store) =>
+{
+    if (!store.TryGet(id, out var session))
+        return Results.NotFound();
+
+    return Results.Ok(session.Client.GetApiStatsSnapshot());
+});
+
 app.MapGet("/api/runtime/sessions/{id}/state", (string id, RuntimeSessionStore store) =>
 {
     if (!store.TryGet(id, out var session))
@@ -261,12 +317,19 @@ app.Run();
 internal sealed class RuntimeSessionStore : IDisposable
 {
     private readonly PrayerLlmRegistry _llmRegistry;
+    private readonly ILogger<RuntimeSessionStore> _logger;
+    private readonly ILoggerFactory _loggerFactory;
     private readonly ConcurrentDictionary<string, PrayerRuntimeSession> _sessions =
         new(StringComparer.Ordinal);
 
-    public RuntimeSessionStore(PrayerLlmRegistry llmRegistry)
+    public RuntimeSessionStore(
+        PrayerLlmRegistry llmRegistry,
+        ILogger<RuntimeSessionStore> logger,
+        ILoggerFactory loggerFactory)
     {
         _llmRegistry = llmRegistry;
+        _logger = logger;
+        _loggerFactory = loggerFactory;
     }
 
     public IReadOnlyList<PrayerRuntimeSession> GetAll()
@@ -280,13 +343,30 @@ internal sealed class RuntimeSessionStore : IDisposable
     {
         string label = ResolveLabel(request.Username, request.Label);
         var client = BuildClient(label);
+        var started = Stopwatch.StartNew();
+        _logger.LogInformation("Creating runtime session for label {Label}", label);
         try
         {
             await client.LoginAsync(request.Username.Trim(), request.Password);
-            return CreateSessionFromAuthenticatedClient(label, client);
+            var session = CreateSessionFromAuthenticatedClient(label, client);
+            started.Stop();
+            PrayerTelemetry.RecordSessionProvision("create", true, started.Elapsed.TotalMilliseconds);
+            _logger.LogInformation(
+                "Created runtime session {SessionId} for label {Label} in {ElapsedMs} ms",
+                session.Id,
+                label,
+                started.Elapsed.TotalMilliseconds);
+            return session;
         }
-        catch
+        catch (Exception ex)
         {
+            started.Stop();
+            PrayerTelemetry.RecordSessionProvision("create", false, started.Elapsed.TotalMilliseconds);
+            _logger.LogWarning(
+                ex,
+                "Failed to create runtime session for label {Label} after {ElapsedMs} ms",
+                label,
+                started.Elapsed.TotalMilliseconds);
             client.Dispose();
             throw;
         }
@@ -296,6 +376,8 @@ internal sealed class RuntimeSessionStore : IDisposable
     {
         string label = ResolveLabel(request.Username, request.Label);
         var client = BuildClient(label);
+        var started = Stopwatch.StartNew();
+        _logger.LogInformation("Registering runtime session for label {Label}", label);
         try
         {
             var password = await client.RegisterAsync(
@@ -304,10 +386,24 @@ internal sealed class RuntimeSessionStore : IDisposable
                 request.RegistrationCode.Trim());
 
             var session = CreateSessionFromAuthenticatedClient(label, client);
+            started.Stop();
+            PrayerTelemetry.RecordSessionProvision("register", true, started.Elapsed.TotalMilliseconds);
+            _logger.LogInformation(
+                "Registered runtime session {SessionId} for label {Label} in {ElapsedMs} ms",
+                session.Id,
+                label,
+                started.Elapsed.TotalMilliseconds);
             return (session, password);
         }
-        catch
+        catch (Exception ex)
         {
+            started.Stop();
+            PrayerTelemetry.RecordSessionProvision("register", false, started.Elapsed.TotalMilliseconds);
+            _logger.LogWarning(
+                ex,
+                "Failed to register runtime session for label {Label} after {ElapsedMs} ms",
+                label,
+                started.Elapsed.TotalMilliseconds);
             client.Dispose();
             throw;
         }
@@ -324,6 +420,7 @@ internal sealed class RuntimeSessionStore : IDisposable
             return false;
 
         session.Dispose();
+        _logger.LogInformation("Removed runtime session {SessionId}", id);
         return true;
     }
 
@@ -353,7 +450,8 @@ internal sealed class RuntimeSessionStore : IDisposable
             llmProvider: provider,
             llmModel: model,
             runtimeTransport: transport,
-            runtimeStateProvider: stateProvider);
+            runtimeStateProvider: stateProvider,
+            logger: _loggerFactory.CreateLogger<PrayerRuntimeSession>());
 
         _sessions[session.Id] = session;
         return session;
@@ -379,6 +477,7 @@ internal sealed class PrayerRuntimeSession : IDisposable
 {
     private readonly object _stateLock = new();
     private readonly List<string> _executionStatus = new();
+    private readonly ILogger<PrayerRuntimeSession> _logger;
 
     public PrayerRuntimeSession(
         string id,
@@ -390,11 +489,13 @@ internal sealed class PrayerRuntimeSession : IDisposable
         string llmProvider,
         string llmModel,
         IRuntimeTransport runtimeTransport,
-        IRuntimeStateProvider runtimeStateProvider)
+        IRuntimeStateProvider runtimeStateProvider,
+        ILogger<PrayerRuntimeSession> logger)
     {
         Id = id;
         Label = label;
         CreatedUtc = createdUtc;
+        _logger = logger;
 
         Agent = agent;
         Client = client;
@@ -436,7 +537,35 @@ internal sealed class PrayerRuntimeSession : IDisposable
             },
             PrayerDefaults.ScriptGenerationMaxAttempts);
 
-        WorkerTask = Task.Run(() => RuntimeHost.RunAsync(WorkerCts.Token), WorkerCts.Token);
+        WorkerTask = Task.Run(async () =>
+        {
+            var started = Stopwatch.StartNew();
+            _logger.LogInformation("Runtime worker started for session {SessionId} ({Label})", Id, Label);
+            try
+            {
+                await RuntimeHost.RunAsync(WorkerCts.Token);
+            }
+            catch (OperationCanceledException) when (WorkerCts.IsCancellationRequested)
+            {
+                // Normal shutdown path.
+            }
+            catch (Exception ex)
+            {
+                PrayerTelemetry.RecordRuntimeWorkerFault();
+                _logger.LogError(ex, "Runtime worker faulted for session {SessionId} ({Label})", Id, Label);
+                throw;
+            }
+            finally
+            {
+                started.Stop();
+                PrayerTelemetry.RecordRuntimeWorkerLifetime(started.Elapsed.TotalSeconds);
+                _logger.LogInformation(
+                    "Runtime worker stopped for session {SessionId} ({Label}) after {ElapsedSeconds:F1}s",
+                    Id,
+                    Label,
+                    started.Elapsed.TotalSeconds);
+            }
+        }, WorkerCts.Token);
     }
 
     public string Id { get; }
@@ -547,69 +676,106 @@ internal sealed class PrayerRuntimeSession : IDisposable
 
     private bool TryApplyCommand(string command, string argument, out string message)
     {
+        var started = Stopwatch.StartNew();
+        bool success;
+        string responseMessage;
+
         switch (command)
         {
             case PrayerRuntimeCommandNames.SetScript:
             {
                 if (string.IsNullOrWhiteSpace(argument))
+                    (success, responseMessage) = (false, "script cannot be empty");
+                else
                 {
-                    message = "script cannot be empty";
-                    return false;
+                    ControlInputQueue.Writer.TryWrite(argument);
+                    (success, responseMessage) = (true, "script queued");
                 }
 
-                ControlInputQueue.Writer.TryWrite(argument);
-                message = "script queued";
-                return true;
+                break;
             }
             case PrayerRuntimeCommandNames.GenerateScript:
             {
                 if (string.IsNullOrWhiteSpace(argument))
+                    (success, responseMessage) = (false, "prompt cannot be empty");
+                else
                 {
-                    message = "prompt cannot be empty";
-                    return false;
+                    GenerateScriptQueue.Writer.TryWrite(argument);
+                    (success, responseMessage) = (true, "generation queued");
                 }
 
-                GenerateScriptQueue.Writer.TryWrite(argument);
-                message = "generation queued";
-                return true;
+                break;
             }
             case PrayerRuntimeCommandNames.ExecuteScript:
             {
                 var script = Agent.CurrentControlInput;
                 if (string.IsNullOrWhiteSpace(script))
+                    (success, responseMessage) = (false, "no script loaded");
+                else
                 {
-                    message = "no script loaded";
-                    return false;
+                    ControlInputQueue.Writer.TryWrite(script);
+                    (success, responseMessage) = (true, "script execution restarted");
                 }
 
-                ControlInputQueue.Writer.TryWrite(script);
-                message = "script execution restarted";
-                return true;
+                break;
             }
             case PrayerRuntimeCommandNames.Halt:
                 HaltNowQueue.Writer.TryWrite(true);
-                message = "halt requested";
-                return true;
+                (success, responseMessage) = (true, "halt requested");
+                break;
             case PrayerRuntimeCommandNames.SaveExample:
                 SaveExampleQueue.Writer.TryWrite(true);
-                message = "save example requested";
-                return true;
+                (success, responseMessage) = (true, "save example requested");
+                break;
             case "loop_on":
                 LoopEnabled = true;
-                message = "loop enabled";
-                return true;
+                (success, responseMessage) = (true, "loop enabled");
+                break;
             case "loop_off":
                 LoopEnabled = false;
-                message = "loop disabled";
-                return true;
+                (success, responseMessage) = (true, "loop disabled");
+                break;
             default:
-                message = $"unknown command: {command}";
-                return false;
+                (success, responseMessage) = (false, $"unknown command: {command}");
+                break;
         }
+
+        started.Stop();
+        message = responseMessage;
+        PrayerTelemetry.RecordRuntimeCommand(command, success, started.Elapsed.TotalMilliseconds);
+
+        var controlQueueDepth = ControlInputQueue.Reader.CanCount ? ControlInputQueue.Reader.Count : -1;
+        var generateQueueDepth = GenerateScriptQueue.Reader.CanCount ? GenerateScriptQueue.Reader.Count : -1;
+        var haltQueueDepth = HaltNowQueue.Reader.CanCount ? HaltNowQueue.Reader.Count : -1;
+
+        if (success)
+        {
+            _logger.LogInformation(
+                "Session {SessionId} command {Command} accepted in {ElapsedMs} ms (control={ControlDepth}, generate={GenerateDepth}, halt={HaltDepth}, loop={LoopEnabled})",
+                Id,
+                command,
+                started.Elapsed.TotalMilliseconds,
+                controlQueueDepth,
+                generateQueueDepth,
+                haltQueueDepth,
+                LoopEnabled);
+        }
+        else
+        {
+            _logger.LogWarning(
+                "Session {SessionId} command {Command} rejected in {ElapsedMs} ms: {Message}",
+                Id,
+                command,
+                started.Elapsed.TotalMilliseconds,
+                responseMessage);
+        }
+
+        return success;
     }
 
     public void Dispose()
     {
+        _logger.LogInformation("Disposing runtime session {SessionId} ({Label})", Id, Label);
         WorkerCts.Cancel();
         Client.Dispose();
     }
@@ -639,6 +805,7 @@ internal static class PrayerDefaults
 {
     public const int ScriptGenerationMaxAttempts = 3;
     public const int ExecutionStatusHistoryLimit = 200;
+    public const double SlowRequestThresholdMs = 500;
 }
 
 internal static class PrayerRuntimeCommandNames
@@ -843,5 +1010,70 @@ internal sealed class PrayerPreferenceStore
             bots,
             new JsonSerializerOptions { WriteIndented = true });
         File.WriteAllText(AppPaths.SavedBotsFile, json);
+    }
+}
+
+internal static class PrayerTelemetry
+{
+    private static readonly Meter Meter = new("Prayer.Service", "1.0.0");
+    private static readonly Histogram<double> HttpRequestDurationMs =
+        Meter.CreateHistogram<double>("prayer.http.request.duration.ms", "ms");
+    private static readonly Counter<long> HttpRequestCount =
+        Meter.CreateCounter<long>("prayer.http.requests.total");
+    private static readonly Histogram<double> RuntimeCommandDurationMs =
+        Meter.CreateHistogram<double>("prayer.runtime.command.duration.ms", "ms");
+    private static readonly Counter<long> RuntimeCommandCount =
+        Meter.CreateCounter<long>("prayer.runtime.commands.total");
+    private static readonly Histogram<double> SessionProvisionDurationMs =
+        Meter.CreateHistogram<double>("prayer.runtime.session.provision.duration.ms", "ms");
+    private static readonly Counter<long> SessionProvisionCount =
+        Meter.CreateCounter<long>("prayer.runtime.session.provision.total");
+    private static readonly Histogram<double> RuntimeWorkerLifetimeSeconds =
+        Meter.CreateHistogram<double>("prayer.runtime.worker.lifetime.s", "s");
+    private static readonly Counter<long> RuntimeWorkerFaultCount =
+        Meter.CreateCounter<long>("prayer.runtime.worker.faults.total");
+
+    public static void RecordHttpRequest(string method, string route, int statusCode, double elapsedMs)
+    {
+        var tags = new TagList
+        {
+            { "method", method },
+            { "route", route },
+            { "status_code", statusCode }
+        };
+        HttpRequestDurationMs.Record(elapsedMs, tags);
+        HttpRequestCount.Add(1, tags);
+    }
+
+    public static void RecordRuntimeCommand(string command, bool success, double elapsedMs)
+    {
+        var tags = new TagList
+        {
+            { "command", command },
+            { "success", success }
+        };
+        RuntimeCommandDurationMs.Record(elapsedMs, tags);
+        RuntimeCommandCount.Add(1, tags);
+    }
+
+    public static void RecordSessionProvision(string operation, bool success, double elapsedMs)
+    {
+        var tags = new TagList
+        {
+            { "operation", operation },
+            { "success", success }
+        };
+        SessionProvisionDurationMs.Record(elapsedMs, tags);
+        SessionProvisionCount.Add(1, tags);
+    }
+
+    public static void RecordRuntimeWorkerLifetime(double elapsedSeconds)
+    {
+        RuntimeWorkerLifetimeSeconds.Record(elapsedSeconds);
+    }
+
+    public static void RecordRuntimeWorkerFault()
+    {
+        RuntimeWorkerFaultCount.Add(1);
     }
 }

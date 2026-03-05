@@ -95,4 +95,14 @@ public static class SpaceMoltHttpLogging
 
         await File.AppendAllTextAsync(AppPaths.ItemCatalogLogFile, entry);
     }
+
+    public static async Task LogApiCommandStatsAsync(string context, string summary)
+    {
+        var entry =
+            $"[{DateTime.UtcNow:O}] SPACEMOLT_API_STATS\n" +
+            $"Context: {context}\n" +
+            $"{summary}\n\n";
+
+        await File.AppendAllTextAsync(AppPaths.SpaceMoltApiStatsLogFile, entry);
+    }
 }

@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
@@ -18,6 +20,8 @@ public class SpaceMoltHttpClient : IDisposable, IRuntimeTransport
     private readonly SpaceMoltMapService _mapService;
     private readonly SpaceMoltNotificationTracker _notificationTracker;
     private readonly SpaceMoltSessionCache _sessionCache;
+    private readonly ConcurrentDictionary<string, ApiCommandPerfCounter> _apiCommandPerf =
+        new(StringComparer.OrdinalIgnoreCase);
 
     private string? _sessionId;
     private DateTimeOffset? _sessionExpiresAt;
@@ -30,7 +34,13 @@ public class SpaceMoltHttpClient : IDisposable, IRuntimeTransport
     private GameState? _latestGameState;
     private readonly SemaphoreSlim _stateRefreshLock = new(1, 1);
     private readonly SemaphoreSlim _sessionRecoveryLock = new(1, 1);
+    private readonly SemaphoreSlim _apiStatsLogLock = new(1, 1);
     private bool _isRefreshingLatestState;
+    private readonly DateTime _apiStatsStartedUtc = DateTime.UtcNow;
+    private DateTime _lastApiStatsLogUtc = DateTime.UtcNow;
+    private long _totalApiCalls;
+    private long _totalGetCalls;
+    private long _apiCallsSinceLastStatsLog;
 
     private static readonly TimeSpan MarketCacheTtl = TimeSpan.FromHours(24);
     private static readonly TimeSpan ShipyardCacheTtl = TimeSpan.FromHours(24);
@@ -40,6 +50,9 @@ public class SpaceMoltHttpClient : IDisposable, IRuntimeTransport
     private const int CatalogFetchPageSize = 50;
     private const int MaxQueuedNotifications = 100;
     private const int MaxChatMessages = 40;
+    private const int ApiStatsLogEveryNCalls = 50;
+    private const int ApiStatsTopCommandLimit = 12;
+    private static readonly TimeSpan ApiStatsLogInterval = TimeSpan.FromMinutes(1);
 
     private const string BaseUrl = "https://game.spacemolt.com/api/v1/";
 
@@ -355,7 +368,38 @@ public class SpaceMoltHttpClient : IDisposable, IRuntimeTransport
 
     public void Dispose()
     {
+        try
+        {
+            FlushApiStatsLogAsync("dispose").GetAwaiter().GetResult();
+        }
+        catch
+        {
+            // Best effort on shutdown.
+        }
+
         _http.Dispose();
+    }
+
+    public SpaceMoltApiStatsSnapshot GetApiStatsSnapshot()
+    {
+        var commandStats = _apiCommandPerf
+            .Select(pair => pair.Value.ToSnapshot(pair.Key))
+            .OrderByDescending(s => s.CallCount)
+            .ToList();
+
+        var topGetCommands = commandStats
+            .Where(s => s.Command.StartsWith("get_", StringComparison.OrdinalIgnoreCase))
+            .Take(ApiStatsTopCommandLimit)
+            .ToList();
+
+        return new SpaceMoltApiStatsSnapshot(
+            StartedUtc: _apiStatsStartedUtc,
+            LastUpdatedUtc: DateTime.UtcNow,
+            TotalApiCalls: Interlocked.Read(ref _totalApiCalls),
+            TotalGetCalls: Interlocked.Read(ref _totalGetCalls),
+            DistinctCommands: commandStats.Count,
+            TopCommands: commandStats.Take(ApiStatsTopCommandLimit).ToList(),
+            TopGetCommands: topGetCommands);
     }
 
     internal void SaveMarketCacheToDisk(string stationId, MarketState market)
@@ -401,9 +445,11 @@ public class SpaceMoltHttpClient : IDisposable, IRuntimeTransport
         object? payload,
         bool allowRecoveryRetry)
     {
+        var timer = Stopwatch.StartNew();
         await EnsureUsableSessionAsync(preferCachedSession: false);
 
         long requestId = Interlocked.Increment(ref _requestSequence);
+        bool succeeded = false;
 
         try
         {
@@ -422,12 +468,19 @@ public class SpaceMoltHttpClient : IDisposable, IRuntimeTransport
                 return await ExecuteWithRecoveryAsync(command, payload, allowRecoveryRetry: false);
             }
 
+            succeeded = !SpaceMoltApiTransport.TryExtractApiError(result, out _, out _, out _);
             return result;
         }
         catch (Exception ex) when (allowRecoveryRetry && IsSessionInvalidException(ex))
         {
             await RecoverSessionAsync($"command:{command}");
             return await ExecuteWithRecoveryAsync(command, payload, allowRecoveryRetry: false);
+        }
+        finally
+        {
+            timer.Stop();
+            RecordApiCommandObservation(command, timer.Elapsed.TotalMilliseconds, succeeded);
+            _ = MaybeLogApiStatsAsync();
         }
     }
 
@@ -525,6 +578,61 @@ public class SpaceMoltHttpClient : IDisposable, IRuntimeTransport
         });
     }
 
+    private void RecordApiCommandObservation(string command, double elapsedMs, bool succeeded)
+    {
+        var now = DateTime.UtcNow;
+        var counter = _apiCommandPerf.GetOrAdd(command, _ => new ApiCommandPerfCounter());
+        counter.Record(elapsedMs, succeeded, now);
+
+        Interlocked.Increment(ref _totalApiCalls);
+        if (command.StartsWith("get_", StringComparison.OrdinalIgnoreCase))
+            Interlocked.Increment(ref _totalGetCalls);
+        Interlocked.Increment(ref _apiCallsSinceLastStatsLog);
+    }
+
+    private async Task MaybeLogApiStatsAsync()
+    {
+        var now = DateTime.UtcNow;
+        bool byCount = Interlocked.Read(ref _apiCallsSinceLastStatsLog) >= ApiStatsLogEveryNCalls;
+        bool byTime = (now - _lastApiStatsLogUtc) >= ApiStatsLogInterval;
+        if (!byCount && !byTime)
+            return;
+
+        await FlushApiStatsLogAsync("periodic");
+    }
+
+    private async Task FlushApiStatsLogAsync(string context)
+    {
+        if (!await _apiStatsLogLock.WaitAsync(0))
+            return;
+
+        try
+        {
+            var now = DateTime.UtcNow;
+            var snapshot = GetApiStatsSnapshot();
+            var topGetSummary = snapshot.TopGetCommands.Count == 0
+                ? "(none)"
+                : string.Join(", ", snapshot.TopGetCommands.Select(s =>
+                    $"{s.Command}={s.CallCount} (avg={s.AverageElapsedMs:F1}ms, max={s.MaxElapsedMs:F1}ms, fail={s.FailureCount})"));
+
+            var summary =
+                $"StartedUtc: {snapshot.StartedUtc:O}\n" +
+                $"NowUtc: {now:O}\n" +
+                $"TotalApiCalls: {snapshot.TotalApiCalls}\n" +
+                $"TotalGetCalls: {snapshot.TotalGetCalls}\n" +
+                $"DistinctCommands: {snapshot.DistinctCommands}\n" +
+                $"TopGetCommands: {topGetSummary}";
+
+            await SpaceMoltHttpLogging.LogApiCommandStatsAsync(DebugContext, summary);
+            _lastApiStatsLogUtc = now;
+            Interlocked.Exchange(ref _apiCallsSinceLastStatsLog, 0);
+        }
+        finally
+        {
+            _apiStatsLogLock.Release();
+        }
+    }
+
     private static bool IsSessionInvalidPayload(JsonElement payload)
     {
         if (!SpaceMoltApiTransport.TryExtractApiError(payload, out var code, out var message, out _))
@@ -567,4 +675,59 @@ public class SpaceMoltHttpClient : IDisposable, IRuntimeTransport
                 apiEx.Message.Contains("invalid session", StringComparison.OrdinalIgnoreCase) ||
                 apiEx.Message.Contains("missing or invalid session", StringComparison.OrdinalIgnoreCase));
     }
+
+    private sealed class ApiCommandPerfCounter
+    {
+        private readonly object _lock = new();
+        private long _callCount;
+        private long _failureCount;
+        private double _totalElapsedMs;
+        private double _maxElapsedMs;
+        private DateTime _lastCallUtc;
+
+        public void Record(double elapsedMs, bool succeeded, DateTime nowUtc)
+        {
+            lock (_lock)
+            {
+                _callCount++;
+                if (!succeeded)
+                    _failureCount++;
+                _totalElapsedMs += elapsedMs;
+                _maxElapsedMs = Math.Max(_maxElapsedMs, elapsedMs);
+                _lastCallUtc = nowUtc;
+            }
+        }
+
+        public SpaceMoltApiCommandStats ToSnapshot(string command)
+        {
+            lock (_lock)
+            {
+                var avgMs = _callCount > 0 ? _totalElapsedMs / _callCount : 0;
+                return new SpaceMoltApiCommandStats(
+                    Command: command,
+                    CallCount: _callCount,
+                    FailureCount: _failureCount,
+                    AverageElapsedMs: avgMs,
+                    MaxElapsedMs: _maxElapsedMs,
+                    LastCallUtc: _lastCallUtc);
+            }
+        }
+    }
 }
+
+public sealed record SpaceMoltApiStatsSnapshot(
+    DateTime StartedUtc,
+    DateTime LastUpdatedUtc,
+    long TotalApiCalls,
+    long TotalGetCalls,
+    int DistinctCommands,
+    IReadOnlyList<SpaceMoltApiCommandStats> TopCommands,
+    IReadOnlyList<SpaceMoltApiCommandStats> TopGetCommands);
+
+public sealed record SpaceMoltApiCommandStats(
+    string Command,
+    long CallCount,
+    long FailureCount,
+    double AverageElapsedMs,
+    double MaxElapsedMs,
+    DateTime LastCallUtc);
