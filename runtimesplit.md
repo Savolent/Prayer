@@ -7,7 +7,7 @@ Detailed implementation plan remains in `MIDDLE_RUNTIME_SPLIT_PLAN.md`.
 
 - [x] Step 0: Baseline and safety harness
 - [x] Step 1: Introduce middle-runtime contracts (no behavior changes)
-- [ ] Step 2: Add SpaceMolt adapter implementing new contracts
+- [x] Step 2: Add SpaceMolt adapter implementing new contracts
 - [ ] Step 3: Decouple command contracts from concrete client
 - [ ] Step 4: Decouple execution engine from concrete client
 - [ ] Step 5: Move DSL package boundary into middle runtime
@@ -28,6 +28,12 @@ Detailed implementation plan remains in `MIDDLE_RUNTIME_SPLIT_PLAN.md`.
 - `src/MiddleRuntime/Contracts/IRuntimeEngine.cs`
 - `src/MiddleRuntime/Contracts/RuntimeCommandResult.cs`
 - `src/MiddleRuntime/Contracts/RuntimeExecutionResult.cs`
+
+## Step 2 completion evidence
+
+- `src/Infra/SpaceMolt/SpaceMoltRuntimeTransportAdapter.cs`
+- `src/App/Program.cs` (adapter instantiated alongside `SpaceMoltHttpClient`)
+- `src/App/BotSession.cs` (stores optional runtime transport for future cutover steps)
 
 ## Notes
 

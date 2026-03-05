@@ -303,6 +303,7 @@ class Program
 
             var client = new SpaceMoltHttpClient();
             client.DebugContext = label;
+            var runtimeTransport = new SpaceMoltRuntimeTransportAdapter(client);
 
             try
             {
@@ -385,7 +386,8 @@ class Program
                         Guid.NewGuid().ToString("N"),
                         label,
                         agent,
-                        client),
+                        client,
+                        runtimeTransport),
                     password);
             }
             catch (Exception ex)
