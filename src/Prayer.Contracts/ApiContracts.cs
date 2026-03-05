@@ -51,6 +51,15 @@ public sealed record RuntimeStateResponse(
     string? LastGenerationPrompt,
     bool LoopEnabled);
 
+public sealed record RuntimeStateV2Response(
+    RuntimeGameStateDto? State,
+    IReadOnlyList<string> Memory,
+    IReadOnlyList<string> ExecutionStatusLines,
+    string? ControlInput,
+    int? CurrentScriptLine,
+    string? LastGenerationPrompt,
+    bool LoopEnabled);
+
 public sealed record SessionSummary(
     string Id,
     string Label,

@@ -239,6 +239,31 @@ app.MapGet("/api/runtime/sessions/{id}/state", async (string id, HttpContext htt
     return Results.Ok(session.BuildRuntimeStateSnapshot());
 });
 
+app.MapGet("/api/runtime/sessions/{id}/state-v2", async (string id, HttpContext http, RuntimeSessionStore store, CancellationToken cancellationToken) =>
+{
+    if (!store.TryGet(id, out var session))
+        return Results.NotFound();
+
+    long since = 0;
+    if (http.Request.Query.TryGetValue("since", out var sinceValues))
+        _ = long.TryParse(sinceValues.ToString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out since);
+
+    int waitMs = 0;
+    if (http.Request.Query.TryGetValue("wait_ms", out var waitValues))
+        _ = int.TryParse(waitValues.ToString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out waitMs);
+
+    if (waitMs > 0)
+    {
+        waitMs = Math.Clamp(waitMs, 0, PrayerDefaults.MaxStateLongPollWaitMs);
+        bool changed = await session.WaitForStateChangeAsync(since, waitMs, cancellationToken);
+        if (!changed)
+            return Results.NoContent();
+    }
+
+    http.Response.Headers["X-Prayer-State-Version"] = session.StateVersion.ToString(CultureInfo.InvariantCulture);
+    return Results.Ok(session.BuildRuntimeStateSnapshotV2());
+});
+
 app.MapPost("/api/runtime/sessions/{id}/script", (string id, Contracts.SetScriptRequest request, RuntimeSessionStore store) =>
 {
     if (!store.TryGet(id, out var session))
@@ -500,6 +525,10 @@ internal sealed class PrayerRuntimeSession : IDisposable
     private readonly object _stateLock = new();
     private readonly List<string> _executionStatus = new();
     private readonly ILogger<PrayerRuntimeSession> _logger;
+    private static readonly JsonSerializerOptions ContractMappingJsonOptions = new()
+    {
+        PropertyNameCaseInsensitive = true
+    };
     private long _stateVersion = 1;
     private TaskCompletionSource<long> _stateChanged = NewStateChangedSignal();
 
@@ -624,6 +653,25 @@ internal sealed class PrayerRuntimeSession : IDisposable
 
         return new Contracts.RuntimeStateResponse(
             stateElement,
+            Agent.GetMemoryList(),
+            GetStatusLines(),
+            Agent.CurrentControlInput,
+            Agent.CurrentScriptLine,
+            Agent.LastScriptGenerationPrompt,
+            LoopEnabled);
+    }
+
+    public Contracts.RuntimeStateV2Response BuildRuntimeStateSnapshotV2()
+    {
+        Contracts.RuntimeGameStateDto? state = null;
+        if (LatestState != null)
+        {
+            var json = JsonSerializer.Serialize(LatestState);
+            state = JsonSerializer.Deserialize<Contracts.RuntimeGameStateDto>(json, ContractMappingJsonOptions);
+        }
+
+        return new Contracts.RuntimeStateV2Response(
+            state,
             Agent.GetMemoryList(),
             GetStatusLines(),
             Agent.CurrentControlInput,
