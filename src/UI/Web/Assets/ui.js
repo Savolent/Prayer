@@ -427,22 +427,6 @@
   });
 
   document.addEventListener('click', function (e) {
-    var mapResetBtn = e.target.closest('.map-reset-btn');
-    if (mapResetBtn) {
-      var canvasId = mapResetBtn.getAttribute('data-map-canvas-id') || '';
-      var canvas = document.getElementById(canvasId);
-      if (canvas) {
-        var state = window._galaxyMapStates && window._galaxyMapStates.get(canvas);
-        if (state) {
-          state.zoom = 1;
-          state.panX = 0;
-          state.panY = 0;
-          window.drawGalaxyMapCanvas(canvas);
-        }
-      }
-      return;
-    }
-
     var addBtn = e.target.closest('#open-add-bot');
     if (addBtn) {
       window.openSidebarLayer('add-bot-panel-layer');
@@ -480,22 +464,8 @@
 
   document.addEventListener('htmx:afterSwap', function () {
     window.ensureScriptEditor();
-    window.renderGalaxyMapCanvases();
     refreshEditors();
   });
 
-  if (!window._galaxyMapResizeHooked) {
-    window._galaxyMapResizeHooked = true;
-    window.addEventListener('resize', function () {
-      window.renderGalaxyMapCanvases();
-    });
-  }
-
-  if (!window._galaxyMapPoller) {
-    window._galaxyMapPoller = setInterval(window.pollGalaxyMapData, 3000);
-  }
-
   window.ensureScriptEditor();
-  window.renderGalaxyMapCanvases();
-  window.pollGalaxyMapData();
 }());

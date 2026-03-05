@@ -272,12 +272,6 @@ public sealed class HtmxBotWindow : IAppUi
             return;
         }
 
-        if (req.HttpMethod == "GET" && path == "/partial/map-data")
-        {
-            WriteText(ctx.Response, BuildMapDataJson(), "application/json; charset=utf-8");
-            return;
-        }
-
         if (req.HttpMethod == "POST" && path == "/api/prompt")
         {
             var form = ReadForm(req);
@@ -528,7 +522,6 @@ public sealed class HtmxBotWindow : IAppUi
         sb.AppendLine("<button type='button' class='tab-btn' data-tab='shipyard'>Shipyard</button>");
         sb.AppendLine("<button type='button' class='tab-btn' data-tab='cantina'>Cantina</button>");
         sb.AppendLine("<button type='button' class='tab-btn' data-tab='catalog'>Catalog</button>");
-        sb.AppendLine("<button type='button' class='tab-btn' data-tab='map'>Map</button>");
         sb.AppendLine("</div>");
         sb.AppendLine("<div class='tab-content'>");
         sb.AppendLine("<div id='state-pane-space' class='tab-pane active' hx-get='partial/state?tab=space' hx-trigger='load, every 1000ms' hx-swap='innerHTML'></div>");
@@ -536,7 +529,6 @@ public sealed class HtmxBotWindow : IAppUi
         sb.AppendLine("<div id='state-pane-shipyard' class='tab-pane' hx-get='partial/state?tab=shipyard' hx-trigger='load, every 1000ms' hx-swap='innerHTML'></div>");
         sb.AppendLine("<div id='state-pane-cantina' class='tab-pane' hx-get='partial/state?tab=cantina' hx-trigger='load, every 1000ms' hx-swap='innerHTML'></div>");
         sb.AppendLine("<div id='state-pane-catalog' class='tab-pane' hx-get='partial/state?tab=catalog' hx-trigger='load' hx-swap='innerHTML'></div>");
-        sb.AppendLine("<div id='state-pane-map' class='tab-pane' hx-get='partial/state?tab=map' hx-trigger='load' hx-swap='innerHTML'></div>");
         sb.AppendLine("</div>");
         sb.AppendLine("</div>");
 
@@ -603,36 +595,11 @@ public sealed class HtmxBotWindow : IAppUi
             case "catalog":
                 AppendCatalogHtml(sb, snapshot.CatalogStateMarkdown);
                 break;
-            case "map":
-                AppendMapHtml(sb);
-                break;
             default:
                 sb.Append("<pre>").Append(E(snapshot.SpaceStateMarkdown)).AppendLine("</pre>");
                 break;
         }
         return sb.ToString();
-    }
-
-    private void AppendMapHtml(StringBuilder sb)
-    {
-        var map = LoadGalaxyMapFromCache();
-        int systemsCount = map.Systems?.Count ?? 0;
-        var mapJson = JsonSerializer.Serialize(map);
-        sb.AppendLine("<div class='map-wrap'>");
-        sb.Append("<div id='map-legend' class='map-legend'>Known systems: ")
-            .Append(systemsCount)
-            .AppendLine(" | Drag: pan | Wheel: zoom</div>");
-        sb.AppendLine("<div class='map-controls'><button type='button' class='map-reset-btn' data-map-canvas-id='state-map-canvas'>Reset View</button></div>");
-        sb.Append("<canvas id='state-map-canvas' class='galaxy-map-canvas' data-map='")
-            .Append(E(mapJson))
-            .AppendLine("'></canvas>");
-        sb.AppendLine("</div>");
-    }
-
-    private static string BuildMapDataJson()
-    {
-        var map = LoadGalaxyMapFromCache();
-        return JsonSerializer.Serialize(map);
     }
 
     private static GalaxyMapSnapshot LoadGalaxyMapFromCache()
