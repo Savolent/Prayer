@@ -3,10 +3,18 @@
     <TargetFramework>net8.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <NuGetAudit>false</NuGetAudit>
+    <NoWarn>$(NoWarn);NU1900</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
     <ProjectReference Include="../Prayer.Contracts/Prayer.Contracts.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="../Prayer.Shared/**/*.cs" />
+    <Compile Remove="../Prayer.Shared/bin/**" />
+    <Compile Remove="../Prayer.Shared/obj/**" />
   </ItemGroup>
 
   <ItemGroup>

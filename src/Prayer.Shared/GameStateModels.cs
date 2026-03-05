@@ -1,10 +1,16 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 
-public class GameState
+// =====================================================
+// GAME STATE
+// =====================================================
+
+public partial class GameState
 {
+
     public string System { get; set; } = "";
-    public POIInfo CurrentPOI { get; set; } = new();
+    public POIInfo CurrentPOI { get; set; } = null!;
 
     public POIInfo[] POIs { get; set; } = Array.Empty<POIInfo>();
     public string[] Systems { get; set; } = Array.Empty<string>();
@@ -14,7 +20,8 @@ public class GameState
     public EconomyDeal[] EconomyDeals { get; set; } = Array.Empty<EconomyDeal>();
     public OpenOrderInfo[] OwnBuyOrders { get; set; } = Array.Empty<OpenOrderInfo>();
     public OpenOrderInfo[] OwnSellOrders { get; set; } = Array.Empty<OpenOrderInfo>();
-    public Dictionary<string, ItemStack> Cargo { get; set; } = new();
+    public Dictionary<string, ItemStack> Cargo { get; set; }
+        = new Dictionary<string, ItemStack>();
 
     public string ShipName { get; set; } = "";
     public string ShipClassId { get; set; } = "";
@@ -47,49 +54,47 @@ public class GameState
     public int CargoCapacity { get; set; }
     public GameNotification[] Notifications { get; set; } = Array.Empty<GameNotification>();
     public GameChatMessage[] ChatMessages { get; set; } = Array.Empty<GameChatMessage>();
-}
+    public MarketState? CurrentMarket
+    {
+        get
+        {
+            if (!Docked || !CurrentPOI.IsStation)
+                return null;
 
-public class GalaxyState
-{
-    public GalaxyMapSnapshot Map { get; set; } = new();
-    public GalaxyMarket Market { get; set; } = new();
-    public GalaxyCatalog Catalog { get; set; } = new();
-    public GalaxyResources Resources { get; set; } = new();
-    public DateTime UpdatedAtUtc { get; set; } = DateTime.UtcNow;
-}
+            if (Galaxy?.Market?.MarketsByStation == null)
+                return null;
 
-public class GalaxyResources
-{
-    public Dictionary<string, string[]> SystemsByResource { get; set; } = new(StringComparer.Ordinal);
-    public Dictionary<string, string[]> PoisByResource { get; set; } = new(StringComparer.Ordinal);
-}
+            return Galaxy.Market.MarketsByStation.TryGetValue(CurrentPOI.Id, out var market)
+                ? market
+                : null;
+        }
+    }
 
-public class GalaxyMarket
-{
-    public Dictionary<string, MarketState> MarketsByStation { get; set; } = new(StringComparer.Ordinal);
-    public Dictionary<string, decimal> GlobalMedianBuyPrices { get; set; } = new(StringComparer.Ordinal);
-    public Dictionary<string, decimal> GlobalMedianSellPrices { get; set; } = new(StringComparer.Ordinal);
-    public Dictionary<string, decimal> GlobalWeightedMidPrices { get; set; } = new(StringComparer.Ordinal);
-}
+    public int GetQuantity(string itemId)
+    {
+        return Cargo.TryGetValue(itemId, out var stack)
+            ? stack.Quantity
+            : 0;
+    }
 
-public class GalaxyCatalog
-{
-    public Dictionary<string, CatalogueEntry> ItemsById { get; set; } = new(StringComparer.Ordinal);
-    public Dictionary<string, CatalogueEntry> ShipsById { get; set; } = new(StringComparer.Ordinal);
+    public bool HasItem(string itemId, int minQuantity = 1)
+    {
+        return GetQuantity(itemId) >= minQuantity;
+    }
 }
 
 public class GalaxyMapSnapshot
 {
     public List<GalaxySystemInfo> Systems { get; set; } = new();
     public List<GalaxyKnownPoiInfo> KnownPois { get; set; } = new();
-    public DateTime UpdatedAtUtc { get; set; } = DateTime.UtcNow;
 }
 
 public class GalaxySystemInfo
 {
     public string Id { get; set; } = "";
-    public string Name { get; set; } = "";
-    public string Region { get; set; } = "";
+    public string Empire { get; set; } = "";
+    public double? X { get; set; }
+    public double? Y { get; set; }
     public List<string> Connections { get; set; } = new();
     public List<GalaxyPoiInfo> Pois { get; set; } = new();
 }
@@ -97,34 +102,67 @@ public class GalaxySystemInfo
 public class GalaxyPoiInfo
 {
     public string Id { get; set; } = "";
-    public string Name { get; set; } = "";
-    public string Type { get; set; } = "";
+    public double? X { get; set; }
+    public double? Y { get; set; }
 }
 
 public class GalaxyKnownPoiInfo
 {
     public string Id { get; set; } = "";
+    public string SystemId { get; set; } = "";
     public string Name { get; set; } = "";
     public string Type { get; set; } = "";
-    public string SystemId { get; set; } = "";
-    public DateTime UpdatedAtUtc { get; set; } = DateTime.UtcNow;
+    public double? X { get; set; }
+    public double? Y { get; set; }
+    public bool HasBase { get; set; }
+    public string? BaseId { get; set; }
+    public string? BaseName { get; set; }
+    public DateTime LastSeenUtc { get; set; } = DateTime.UtcNow;
 }
 
 public class MarketState
 {
     public string StationId { get; set; } = "";
-    public string BaseName { get; set; } = "";
-    public DateTime LastUpdateUtc { get; set; }
-    public Dictionary<string, List<MarketOrder>> BuyOrders { get; set; }
-        = new(StringComparer.Ordinal);
+
     public Dictionary<string, List<MarketOrder>> SellOrders { get; set; }
-        = new(StringComparer.Ordinal);
+        = new();
+
+    public Dictionary<string, List<MarketOrder>> BuyOrders { get; set; }
+        = new();
 }
 
 public class MarketOrder
 {
+    public string ItemId { get; set; } = "";
     public decimal PriceEach { get; set; }
     public int Quantity { get; set; }
+}
+
+public class StationInfo
+{
+    public string StationId { get; set; } = "";
+    public int StorageCredits { get; set; }
+    public Dictionary<string, ItemStack> StorageItems { get; set; } = new();
+    public MarketState? Market { get; set; }
+    public List<OpenOrderInfo> BuyOrders { get; set; } = new();
+    public List<OpenOrderInfo> SellOrders { get; set; } = new();
+    public string[] ShipyardShowroomLines { get; set; } = Array.Empty<string>();
+    public string[] ShipyardListingLines { get; set; } = Array.Empty<string>();
+}
+
+public class MarketCacheSnapshot
+{
+    public string StationId { get; set; } = "";
+    public DateTime CapturedAtUtc { get; set; }
+    public MarketState? Market { get; set; }
+}
+
+public class ShipyardCacheSnapshot
+{
+    public string StationId { get; set; } = "";
+    public DateTime CapturedAtUtc { get; set; }
+    public string[] ShowroomLines { get; set; } = Array.Empty<string>();
+    public string[] ListingLines { get; set; } = Array.Empty<string>();
 }
 
 public class EconomyDeal
@@ -155,8 +193,34 @@ public class OwnedShipInfo
 
 public class ItemStack
 {
-    public string ItemId { get; set; } = "";
-    public int Quantity { get; set; }
+    public string ItemId { get; }
+    public int Quantity { get; private set; }
+
+    public ItemStack(string itemId, int quantity)
+    {
+        ItemId = itemId;
+        Quantity = quantity;
+    }
+
+    public void Add(int amount)
+    {
+        if (amount > 0)
+            Quantity += amount;
+    }
+
+    public void Remove(int amount)
+    {
+        if (amount <= 0) return;
+
+        Quantity -= amount;
+        if (Quantity < 0)
+            Quantity = 0;
+    }
+
+    public override string ToString()
+    {
+        return $"{ItemId} x{Quantity}";
+    }
 }
 
 public class POIInfo
@@ -174,6 +238,14 @@ public class POIInfo
     public string? BaseName { get; set; }
     public int Online { get; set; }
     public PoiResourceInfo[] Resources { get; set; } = Array.Empty<PoiResourceInfo>();
+
+    public bool IsMiningTarget =>
+        Type == "asteroid_belt" ||
+        Type == "asteroid" ||
+        Type == "gas_cloud" ||
+        Type == "ice_field";
+
+    public bool IsStation => Type == "station";
 }
 
 public class PoiResourceInfo

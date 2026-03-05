@@ -187,11 +187,3 @@ public class SpaceMoltAgent
 }
 
 #endregion
-
-public class CommandResult
-{
-    public string Action { get; set; } = "";
-    public string? Arg1 { get; set; }
-    public int? Quantity { get; set; }
-    public int? SourceLine { get; set; }
-}
