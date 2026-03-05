@@ -10,8 +10,8 @@ Detailed implementation plan remains in `MIDDLE_RUNTIME_SPLIT_PLAN.md`.
 - [x] Step 2: Add SpaceMolt adapter implementing new contracts
 - [x] Step 3: Decouple command contracts from concrete client
 - [x] Step 4: Decouple execution engine from concrete client
-- [ ] Step 5: Move DSL package boundary into middle runtime
-- [ ] Step 6: Extract runtime-state builder from SpaceMolt assembler
+- [x] Step 5: Move DSL package boundary into middle runtime
+- [x] Step 6: Extract runtime-state builder from SpaceMolt assembler
 - [ ] Step 7: Introduce `IRuntimeStateProvider` and wire runtime to it
 - [ ] Step 8: Create middle-runtime host facade
 - [ ] Step 9: Move bot session ownership into runtime host
@@ -47,6 +47,16 @@ Detailed implementation plan remains in `MIDDLE_RUNTIME_SPLIT_PLAN.md`.
 
 - `src/Core/Agent/CommandExecutionEngine.cs` (`ExecuteAsync` now accepts `IRuntimeTransport`)
 - `src/Core/Agent/Agent.cs` (agent execution path now forwards `IRuntimeTransport` to execution engine)
+
+## Step 5 completion evidence
+
+- DSL package moved from `src/Core/DSL/*` to `src/MiddleRuntime/DSL/*`
+- `src/Core/Agent/CommandExecutionEngine.cs`, `src/Core/Agent/ScriptGenerationService.cs`, and parser callers continue using same DSL types/functions with unchanged behavior
+
+## Step 6 completion evidence
+
+- `src/MiddleRuntime/State/RuntimeStateBuilder.cs` added for pure runtime-side state projection/defaulting.
+- `src/Infra/SpaceMolt/SpaceMoltGameStateAssembler.cs` now gathers payload/cache data and delegates final `GameState` projection/default application to `RuntimeStateBuilder`.
 
 ## Notes
 
