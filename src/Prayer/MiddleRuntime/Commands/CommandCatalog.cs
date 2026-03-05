@@ -28,6 +28,7 @@ public static class CommandCatalog
         new CommissionStatusCommand(),
         new SellShipCommand(),
         new ListShipForSaleCommand(),
+        new WaitCommand(),
         new ExitCommand(),
     };
 }

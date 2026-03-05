@@ -6,6 +6,8 @@ using System.Threading.Tasks;
 
 public class MineCommand : IMultiTurnCommand, IDslCommandGrammar
 {
+    private static readonly TimeSpan DepletedWait = TimeSpan.FromSeconds(10);
+
     public string Name => "mine";
     public DslCommandSyntax GetDslSyntax() => new(
         ArgSpecs: new[]
@@ -206,6 +208,7 @@ public class MineCommand : IMultiTurnCommand, IDslCommandGrammar
         }
 
         JsonElement response = (await client.ExecuteCommandAsync("mine")).Payload;
+        await WaitIfDepletedAsync(response);
         CaptureStopReasonFromResponse(response);
         return response;
     }
@@ -243,6 +246,7 @@ public class MineCommand : IMultiTurnCommand, IDslCommandGrammar
             }
 
             JsonElement mineResponse = (await client.ExecuteCommandAsync("mine")).Payload;
+            await WaitIfDepletedAsync(mineResponse);
             CaptureStopReasonFromResponse(mineResponse);
             return mineResponse;
         }
@@ -469,6 +473,17 @@ public class MineCommand : IMultiTurnCommand, IDslCommandGrammar
 
         _stopRequested = true;
         _stopReason = $"Error: {(string.IsNullOrWhiteSpace(code) ? "" : $" ({code})")}: {message ?? "unknown"}";
+    }
+
+    private static Task WaitIfDepletedAsync(JsonElement response)
+    {
+        if (CommandJson.TryGetError(response, out var code, out _) &&
+            string.Equals(code, "depleted", StringComparison.OrdinalIgnoreCase))
+        {
+            return Task.Delay(DepletedWait);
+        }
+
+        return Task.CompletedTask;
     }
 
     private void InitializeBfsQueue(GameState state)
