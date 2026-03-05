@@ -865,10 +865,10 @@ public sealed class HtmxBotWindow : IAppUi
     private static readonly string[] KnownCommandNames =
     {
         "mine", "survey", "go", "accept_mission", "abandon_mission", "dock", "repair",
-        "sell", "buy", "cancel_buy", "cancel_sell", "withdraw_items", "deposit_items",
+        "sell", "buy", "cancel_buy", "cancel_sell", "retrieve", "stash",
         "switch_ship", "install_mod", "uninstall_mod", "buy_ship", "buy_listed_ship",
         "commission_quote", "commission_ship", "commission_status", "sell_ship",
-        "list_ship_for_sale", "wait", "exit", "halt"
+        "list_ship_for_sale", "wait", "halt"
     };
 
     private static (List<string> Systems, HashSet<string> Pois) LoadMapNameHintsFromCache()

@@ -29,6 +29,5 @@ public static class CommandCatalog
         new SellShipCommand(),
         new ListShipForSaleCommand(),
         new WaitCommand(),
-        new ExitCommand(),
     };
 }
