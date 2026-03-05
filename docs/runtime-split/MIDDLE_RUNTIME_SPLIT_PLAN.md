@@ -6,22 +6,23 @@ Date: 2026-03-05
 
 - Completed: `RuntimeHost` now depends on `IRuntimeTransport` (not concrete `SpaceMoltHttpClient`).
 - Completed: runtime-facing rate-limit contract added (`RuntimeRateLimitException`) and mapped from infra adapters.
-- Completed: runtime command and execution ownership moved under `src/MiddleRuntime`:
-  - `src/MiddleRuntime/Commands/*`
-  - `src/MiddleRuntime/Execution/CommandExecutionEngine.cs`
-  - `src/MiddleRuntime/Agent/*`
+- Completed: runtime command and execution ownership now lives under `src/Prayer/MiddleRuntime`:
+  - `src/Prayer/MiddleRuntime/Commands/*`
+  - `src/Prayer/MiddleRuntime/Execution/CommandExecutionEngine.cs`
+  - `src/Prayer/MiddleRuntime/Agent/*`
 - In progress: `Prayer` HTTP host scaffold added at `src/Prayer`.
 - Completed: Prayer now runs real runtime worker sessions and exposes explicit runtime control endpoints (script, generate, execute, halt, loop, status, snapshot).
 - In progress: App has switched to Prayer-only runtime command/loop routing and active-bot state polling via Prayer `/state`.
 - In progress: Shared API DTO contract project introduced (`src/Prayer.Contracts`) and wired into both App and Prayer for session/command/snapshot payloads.
 - Completed: Legacy Prayer `/ui` display payload path removed; App now renders from structured state contract.
+- Completed: `src/Prayer/Prayer.csproj` no longer references `SpaceMoltLLM.csproj`; Prayer now compiles required runtime/core/infra source directly.
 
 ## Goal
 
 Extract the current in-process middle runtime into an HTTP service named `Prayer`, with clean boundaries:
 
-- Runtime semantics in `Prayer` / `Prayer.Runtime`
-- SpaceMolt transport details in `Prayer.Infra.SpaceMolt`
+- Runtime semantics in `Prayer` (with optional later split to `Prayer.Runtime`)
+- SpaceMolt transport details in `Prayer` (with optional later split to `Prayer.Infra.SpaceMolt`)
 - UI/app as HTTP client of Prayer
 
 ## Scope guardrails (current phase)
@@ -36,8 +37,8 @@ Extract the current in-process middle runtime into an HTTP service named `Prayer
 2. Remove runtime-layer catches/logic that depend on infra-only exception types.
 3. Introduce `IRuntimeHost` and use it in app/session state.
 4. Move runtime command semantics ownership into runtime layer:
-   - Move `src/Core/Commands/*` to runtime-owned location.
-   - Move `CommandExecutionEngine` into runtime-owned location.
+   - Keep command semantics under `src/Prayer/MiddleRuntime/Commands/*`.
+   - Keep `CommandExecutionEngine` under `src/Prayer/MiddleRuntime/Execution`.
 
 Exit criteria:
 - Runtime orchestration compiles with interface-only transport/state dependencies.
@@ -68,9 +69,10 @@ Exit criteria:
 
 ## Stage 4: Packaging and operations
 
-1. Split projects cleanly (`Prayer`, `Prayer.Runtime`, `Prayer.Infra.SpaceMolt` as needed).
-2. Add dependency checks to enforce boundary direction.
-3. Add health/readiness endpoints and basic observability (structured logs + metrics hooks).
+1. Keep Prayer independently buildable without `SpaceMoltLLM.csproj` reference (done).
+2. Optional future split: carve `Prayer.Runtime` / `Prayer.Infra.SpaceMolt` projects if needed.
+3. Add dependency checks to enforce boundary direction.
+4. Add health/readiness endpoints and basic observability (structured logs + metrics hooks).
 
 Exit criteria:
 - Prayer can run independently and serve multiple runtime sessions in a trusted single-operator environment.

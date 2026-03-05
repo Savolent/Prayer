@@ -8,11 +8,17 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <Compile Remove="src/Prayer/**" />
+    <Compile Remove="src/Prayer/Program.cs" />
+    <Compile Remove="src/Prayer/obj/**" />
+    <Compile Remove="src/Prayer/bin/**" />
     <Compile Remove="src/Prayer.Contracts/**" />
-    <EmbeddedResource Remove="src/Prayer/**" />
+    <EmbeddedResource Remove="src/Prayer/README.md" />
+    <EmbeddedResource Remove="src/Prayer/obj/**" />
+    <EmbeddedResource Remove="src/Prayer/bin/**" />
     <EmbeddedResource Remove="src/Prayer.Contracts/**" />
-    <None Remove="src/Prayer/**" />
+    <None Remove="src/Prayer/README.md" />
+    <None Remove="src/Prayer/obj/**" />
+    <None Remove="src/Prayer/bin/**" />
     <None Remove="src/Prayer.Contracts/**" />
   </ItemGroup>
 

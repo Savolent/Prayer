@@ -2,9 +2,8 @@
 
 ## Target architecture
 
-- `Client/UI` -> `Prayer` (HTTP service) -> `Prayer.Infra.SpaceMolt` -> `SpaceMolt`
-- `Prayer` owns runtime orchestration, DSL semantics, command semantics, and execution control-flow.
-- `Prayer.Infra.SpaceMolt` owns concrete SpaceMolt HTTP transport/session/retry/rate-limit behavior.
+- `Client/UI` -> `Prayer` (HTTP service) -> `SpaceMolt`
+- `Prayer` owns runtime orchestration, DSL semantics, command semantics, execution control-flow, and SpaceMolt adapters in this phase.
 - Concrete `SpaceMoltHttpClient` stays in infra and must not leak into runtime orchestration code.
 
 ## Deployment assumption (current)
@@ -17,20 +16,20 @@
 ## Naming and component direction
 
 - Service host name: `Prayer`.
-- Runtime library namespace/project direction: `Prayer.Runtime` (or equivalent split of current middle runtime + command execution code).
-- Infra adapter namespace/project direction: `Prayer.Infra.SpaceMolt`.
+- Runtime and infra implementation currently live in the `Prayer` project.
+- `Prayer.Runtime` / `Prayer.Infra.SpaceMolt` split remains optional future work.
 - Shared API contract namespace/project direction: `Prayer.Contracts` (DTO-only, no runtime engine internals).
 
 ## Ownership rules
 
-### Runtime (`Prayer` / `Prayer.Runtime`)
+### Runtime (`Prayer`)
 
 - Own `RuntimeHost` behavior and runtime session lifecycle.
 - Own DSL parse/normalize/interpreter behavior.
 - Own command catalog and command execution engine (including multi-turn command semantics like `go` and `mine`).
 - Depend only on runtime contracts/interfaces for transport and state access.
 
-### Infra (`Prayer.Infra.SpaceMolt`)
+### Infra (inside `Prayer` for now)
 
 - Own `SpaceMoltHttpClient` and all concrete API payload/endpoint details.
 - Own cache/session recovery and rate-limit handling specifics.
@@ -46,5 +45,5 @@
 
 - Replace `RuntimeHost` constructor dependency on `SpaceMoltHttpClient` with `IRuntimeTransport`.
 - Remove direct infra exception dependencies from runtime host (e.g., map to runtime-level error contracts/events).
-- Move command semantics code from `src/Core/Commands` + execution engine from `src/Core/Agent` into runtime ownership.
+- Keep command semantics and execution engine under `src/Prayer/MiddleRuntime/*`.
 - Introduce `IRuntimeHost` and store that interface in app/session state instead of concrete host type.

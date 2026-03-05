@@ -1,7 +1,8 @@
-# Prayer Service (Scaffold)
+# Prayer Service
 
 `Prayer` is the HTTP middle-tier runtime service.
-Its external DTO contracts are moving into `src/Prayer.Contracts`.
+Its external DTO contracts live in `src/Prayer.Contracts`.
+Prayer now builds independently from `SpaceMoltLLM.csproj` and compiles required runtime/core/infra sources directly.
 
 ## Deployment model (current)
 
