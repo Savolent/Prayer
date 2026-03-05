@@ -1,4 +1,9 @@
 (function () {
+  function apiUrl(path) {
+    var p = typeof path === 'string' ? path : '';
+    return p.replace(/^\/+/, '');
+  }
+
   function buildNameRegex(names, lineStartOnly) {
     if (!Array.isArray(names) || names.length === 0) return null;
     var escaped = names
@@ -43,7 +48,7 @@
   window.loadEditorBootstrap = function () {
     if (window._editorBootstrapLoaded) return;
     window._editorBootstrapLoaded = true;
-    fetch('/bootstrap/editor-data', { cache: 'no-store' })
+    fetch(apiUrl('bootstrap/editor-data'), { cache: 'no-store' })
       .then(function (res) { return res.ok ? res.json() : null; })
       .then(function (data) {
         if (!data) return;
@@ -75,7 +80,7 @@
   };
 
   window.syncCurrentScript = function () {
-    fetch('/partial/current-script', { cache: 'no-store' })
+    fetch(apiUrl('partial/current-script'), { cache: 'no-store' })
       .then(function (res) { return res.ok ? res.json() : null; })
       .then(function (state) {
         if (!state || !window._liveScriptEditor) return;
@@ -308,7 +313,7 @@
   };
 
   window.pollGalaxyMapData = function () {
-    fetch('/partial/map-data', { cache: 'no-store' })
+    fetch(apiUrl('partial/map-data'), { cache: 'no-store' })
       .then(function (res) { return res.ok ? res.json() : null; })
       .then(function (map) {
         if (!map) return;
@@ -468,7 +473,9 @@
 
   document.body.addEventListener('htmx:afterRequest', function (e) {
     var path = (((e || {}).detail || {}).pathInfo || {}).requestPath || '';
-    if (path === '/api/add-bot' || path === '/api/llm-select') window.closeAllSidebarLayers();
+    if (path.endsWith('/api/add-bot') || path.endsWith('/api/llm-select') || path === 'api/add-bot' || path === 'api/llm-select') {
+      window.closeAllSidebarLayers();
+    }
   });
 
   document.addEventListener('htmx:afterSwap', function () {

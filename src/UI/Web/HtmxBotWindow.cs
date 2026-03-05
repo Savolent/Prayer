@@ -9,11 +9,12 @@ using System.Threading.Channels;
 
 public sealed class HtmxBotWindow : IAppUi
 {
-    private static readonly Lazy<string> UiCssAsset = new(() => ReadEmbeddedAsset("ui.css"));
-    private static readonly Lazy<string> UiJsAsset = new(() => ReadEmbeddedAsset("ui.js"));
+    private static readonly Lazy<string> UiCssAsset = new(() => ReadUiAsset("ui.css"));
+    private static readonly Lazy<string> UiJsAsset = new(() => ReadUiAsset("ui.js"));
 
     private readonly object _lock = new();
     private readonly string _prefix;
+    private readonly string _routeBasePath;
     private bool _running;
     private HttpListener? _listener;
 
@@ -47,6 +48,7 @@ public sealed class HtmxBotWindow : IAppUi
     public HtmxBotWindow(string prefix = "http://localhost:5057/")
     {
         _prefix = EnsureTrailingSlash(prefix);
+        _routeBasePath = GetRouteBasePath(_prefix);
         _providers.Add("llamacpp");
         _modelsByProvider["llamacpp"] = new[] { "model" };
     }
@@ -200,7 +202,7 @@ public sealed class HtmxBotWindow : IAppUi
     private void HandleRequest(HttpListenerContext ctx)
     {
         var req = ctx.Request;
-        var path = req.Url?.AbsolutePath ?? "/";
+        var path = NormalizeRoutePath(req.Url?.AbsolutePath ?? "/");
 
         if (req.HttpMethod == "GET" && path == "/")
         {
@@ -485,21 +487,25 @@ public sealed class HtmxBotWindow : IAppUi
         sb.AppendLine("<meta charset='utf-8'>");
         sb.AppendLine("<meta name='viewport' content='width=device-width, initial-scale=1'>");
         sb.AppendLine("<title>Servator (HTMX)</title>");
+        sb.Append("<base href='").Append(E(Url(""))).AppendLine("'>");
         sb.AppendLine("<script src='https://unpkg.com/htmx.org@1.9.12'></script>");
         sb.AppendLine("<link rel='stylesheet' href='https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css'>");
         sb.AppendLine("<link rel='stylesheet' href='https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/material-darker.min.css'>");
         sb.AppendLine("<script src='https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js'></script>");
-        sb.AppendLine("<link rel='stylesheet' href='/assets/ui.css'>");
+        sb.AppendLine("<style>");
+        sb.AppendLine(UiCssAsset.Value);
+        sb.AppendLine("</style>");
+        sb.AppendLine("<link rel='stylesheet' href='assets/ui.css'>");
         sb.AppendLine("</head><body><div class='app'><div class='grid'>");
 
         sb.AppendLine("<div class='card sidebar'><div class='sidebar-header'><h3>Bots</h3><div class='sidebar-actions'><button id='open-add-bot' class='icon-btn' type='button' title='Add Bot'>+</button></div></div>");
-        sb.AppendLine("<div class='sidebar-llm'><div id='llm-summary' class='sidebar-llm-name' hx-get='/partial/llm-summary' hx-trigger='load, every 1000ms' hx-swap='innerHTML'>"
+        sb.AppendLine("<div class='sidebar-llm'><div id='llm-summary' class='sidebar-llm-name' hx-get='partial/llm-summary' hx-trigger='load, every 1000ms' hx-swap='innerHTML'>"
             + BuildLlmSummaryHtml()
             + "</div><button id='open-llm-settings' class='icon-btn' type='button' title='LLM Settings'>⚙</button></div>");
-        sb.AppendLine("<div id='bots-panel' hx-get='/partial/bots' hx-trigger='load, every 1000ms' hx-swap='innerHTML'></div>");
+        sb.AppendLine("<div id='bots-panel' hx-get='partial/bots' hx-trigger='load, every 1000ms' hx-swap='innerHTML'></div>");
         sb.AppendLine("<div id='llm-panel-layer' class='panel-layer' data-layer><div class='panel-card'><div class='panel-card-header'><h4>LLM Settings</h4><button class='panel-card-close' data-close-layer type='button'>Close</button></div>");
-        sb.AppendLine("<form hx-post='/api/llm-select' hx-swap='none' class='list'>");
-        sb.AppendLine("<label class='small'>Provider</label><select name='provider' hx-get='/partial/models' hx-target='#model-select' hx-swap='outerHTML' hx-trigger='change'>");
+        sb.AppendLine("<form hx-post='api/llm-select' hx-swap='none' class='list'>");
+        sb.AppendLine("<label class='small'>Provider</label><select name='provider' hx-get='partial/models' hx-target='#model-select' hx-swap='outerHTML' hx-trigger='change'>");
         foreach (var provider in providers)
         {
             var selected = provider.Equals(selectedProvider, StringComparison.OrdinalIgnoreCase) ? " selected" : "";
@@ -509,7 +515,7 @@ public sealed class HtmxBotWindow : IAppUi
         sb.AppendLine("</select><label class='small'>Model</label>");
         sb.AppendLine(BuildModelSelectHtml(selectedProvider, selectedModel));
         sb.AppendLine("<button type='submit'>Apply LLM</button></form></div></div>");
-        sb.AppendLine("<div id='add-bot-panel-layer' class='panel-layer' data-layer><div class='panel-card'><div class='panel-card-header'><h4>Add Bot</h4><button class='panel-card-close' data-close-layer type='button'>Close</button></div><form hx-post='/api/add-bot' hx-swap='none' class='list'>");
+        sb.AppendLine("<div id='add-bot-panel-layer' class='panel-layer' data-layer><div class='panel-card'><div class='panel-card-header'><h4>Add Bot</h4><button class='panel-card-close' data-close-layer type='button'>Close</button></div><form hx-post='api/add-bot' hx-swap='none' class='list'>");
         sb.AppendLine("<select name='mode'><option value='login'>login</option><option value='register'>register</option></select>");
         sb.AppendLine("<input name='username' placeholder='username'><input name='password' placeholder='password'><input name='registration_code' placeholder='registration code'><input name='empire' placeholder='empire (for register)'>");
         sb.AppendLine("<button type='submit'>Add Bot</button></form></div></div></div>");
@@ -525,12 +531,12 @@ public sealed class HtmxBotWindow : IAppUi
         sb.AppendLine("<button type='button' class='tab-btn' data-tab='map'>Map</button>");
         sb.AppendLine("</div>");
         sb.AppendLine("<div class='tab-content'>");
-        sb.AppendLine("<div id='state-pane-space' class='tab-pane active' hx-get='/partial/state?tab=space' hx-trigger='load, every 1000ms' hx-swap='innerHTML'></div>");
-        sb.AppendLine("<div id='state-pane-trade' class='tab-pane' hx-get='/partial/state?tab=trade' hx-trigger='load, every 1000ms' hx-swap='innerHTML'></div>");
-        sb.AppendLine("<div id='state-pane-shipyard' class='tab-pane' hx-get='/partial/state?tab=shipyard' hx-trigger='load, every 1000ms' hx-swap='innerHTML'></div>");
-        sb.AppendLine("<div id='state-pane-cantina' class='tab-pane' hx-get='/partial/state?tab=cantina' hx-trigger='load, every 1000ms' hx-swap='innerHTML'></div>");
-        sb.AppendLine("<div id='state-pane-catalog' class='tab-pane' hx-get='/partial/state?tab=catalog' hx-trigger='load' hx-swap='innerHTML'></div>");
-        sb.AppendLine("<div id='state-pane-map' class='tab-pane' hx-get='/partial/state?tab=map' hx-trigger='load' hx-swap='innerHTML'></div>");
+        sb.AppendLine("<div id='state-pane-space' class='tab-pane active' hx-get='partial/state?tab=space' hx-trigger='load, every 1000ms' hx-swap='innerHTML'></div>");
+        sb.AppendLine("<div id='state-pane-trade' class='tab-pane' hx-get='partial/state?tab=trade' hx-trigger='load, every 1000ms' hx-swap='innerHTML'></div>");
+        sb.AppendLine("<div id='state-pane-shipyard' class='tab-pane' hx-get='partial/state?tab=shipyard' hx-trigger='load, every 1000ms' hx-swap='innerHTML'></div>");
+        sb.AppendLine("<div id='state-pane-cantina' class='tab-pane' hx-get='partial/state?tab=cantina' hx-trigger='load, every 1000ms' hx-swap='innerHTML'></div>");
+        sb.AppendLine("<div id='state-pane-catalog' class='tab-pane' hx-get='partial/state?tab=catalog' hx-trigger='load' hx-swap='innerHTML'></div>");
+        sb.AppendLine("<div id='state-pane-map' class='tab-pane' hx-get='partial/state?tab=map' hx-trigger='load' hx-swap='innerHTML'></div>");
         sb.AppendLine("</div>");
         sb.AppendLine("</div>");
 
@@ -539,17 +545,20 @@ public sealed class HtmxBotWindow : IAppUi
             .Append(E(currentScript))
             .AppendLine("</textarea></div>");
         sb.AppendLine("<h4>Script</h4>");
-        sb.AppendLine("<form id='script-form' hx-post='/api/control-input' hx-swap='none' class='list'>");
+        sb.AppendLine("<form id='script-form' hx-post='api/control-input' hx-swap='none' class='list'>");
         sb.Append("<textarea id='script-input' name='script' rows='7' placeholder='script'>").Append(E(currentScript)).AppendLine("</textarea>");
         sb.AppendLine("<button type='submit'>Set Script</button></form>");
         sb.AppendLine(
-            "<div class='row' style='margin-top:8px;'><form hx-post='/api/execute' hx-swap='none'><button type='submit' title='Execute'>▶️</button></form><form hx-post='/api/halt' hx-swap='none'><button type='submit' title='Halt'>⏹️</button></form><form hx-post='/api/save-example' hx-swap='none'><button type='submit' title='Thumbs Up'>👍</button></form><div id='loop-btn-slot' hx-get='/partial/loop-btn' hx-trigger='load, every 1000ms' hx-swap='innerHTML'>"
+            "<div class='row' style='margin-top:8px;'><form hx-post='api/execute' hx-swap='none'><button type='submit' title='Execute'>▶️</button></form><form hx-post='api/halt' hx-swap='none'><button type='submit' title='Halt'>⏹️</button></form><form hx-post='api/save-example' hx-swap='none'><button type='submit' title='Thumbs Up'>👍</button></form><div id='loop-btn-slot' hx-get='partial/loop-btn' hx-trigger='load, every 1000ms' hx-swap='innerHTML'>"
             + BuildLoopButtonFormHtml(activeBotLoopEnabled)
             + "</div></div>");
-        sb.AppendLine("<h4>Prompt</h4><form hx-post='/api/prompt' hx-swap='none' class='list'><textarea name='prompt' rows='4' placeholder='prompt for script generation'></textarea><button type='submit'>Generate Script</button></form>");
-        sb.AppendLine("<form hx-post='/api/prompt-active-missions' hx-swap='none'><button type='submit'>Generate From Active Mission Objectives</button></form>");
-        sb.AppendLine("<div id='right-panel' hx-get='/partial/right' hx-trigger='load, every 1000ms' hx-swap='innerHTML'></div></div>");
-        sb.AppendLine("<script src='/assets/ui.js'></script>");
+        sb.AppendLine("<h4>Prompt</h4><form hx-post='api/prompt' hx-swap='none' class='list'><textarea name='prompt' rows='4' placeholder='prompt for script generation'></textarea><button type='submit'>Generate Script</button></form>");
+        sb.AppendLine("<form hx-post='api/prompt-active-missions' hx-swap='none'><button type='submit'>Generate From Active Mission Objectives</button></form>");
+        sb.AppendLine("<div id='right-panel' hx-get='partial/right' hx-trigger='load, every 1000ms' hx-swap='innerHTML'></div></div>");
+        sb.AppendLine("<script>");
+        sb.AppendLine(UiJsAsset.Value);
+        sb.AppendLine("</script>");
+        sb.AppendLine("<script src='assets/ui.js'></script>");
         sb.AppendLine("</div></div></body></html>");
         return sb.ToString();
     }
@@ -564,7 +573,7 @@ public sealed class HtmxBotWindow : IAppUi
         foreach (var bot in snapshot.Bots)
         {
             var activeClass = bot.Id == snapshot.ActiveBotId ? " active" : "";
-            sb.Append("<form hx-post='/api/switch-bot' hx-swap='none'><input type='hidden' name='bot_id' value='")
+            sb.Append("<form hx-post='api/switch-bot' hx-swap='none'><input type='hidden' name='bot_id' value='")
                 .Append(E(bot.Id)).Append("'><button class='").Append(activeClass).Append("' type='submit'>")
                 .Append(E(bot.Label)).AppendLine("</button></form>");
         }
@@ -983,7 +992,7 @@ public sealed class HtmxBotWindow : IAppUi
     {
         var activeClass = loopEnabled ? " active" : "";
         var title = loopEnabled ? "Loop On" : "Loop Off";
-        return $"<form id='loop-btn-form' hx-post='/api/loop-toggle' hx-swap='none'><button class='{activeClass}' type='submit' title='{title}'>🔁</button></form>";
+        return $"<form id='loop-btn-form' hx-post='api/loop-toggle' hx-swap='none'><button class='{activeClass}' type='submit' title='{title}'>🔁</button></form>";
     }
 
     private string BuildModelSelectHtml(string provider, string? preferredModel = null)
@@ -1043,20 +1052,120 @@ public sealed class HtmxBotWindow : IAppUi
 
     private static string E(string value) => WebUtility.HtmlEncode(value ?? "");
 
-    private static string ReadEmbeddedAsset(string fileName)
+    private static string ReadUiAsset(string fileName)
     {
+        if (TryReadEmbeddedAsset(fileName, out var embedded))
+            return embedded;
+
+        var filePath = FindUiAssetPath(fileName);
+        if (filePath != null)
+            return File.ReadAllText(filePath, Encoding.UTF8);
+
+        return fileName.EndsWith(".css", StringComparison.OrdinalIgnoreCase)
+            ? "body{margin:0;font-family:ui-monospace,monospace;background:#0f1115;color:#d7dae0}"
+            : "console.error('Missing UI asset: " + fileName.Replace("'", "\\'", StringComparison.Ordinal) + "');";
+    }
+
+    private static bool TryReadEmbeddedAsset(string fileName, out string content)
+    {
+        content = string.Empty;
         var assembly = typeof(HtmxBotWindow).Assembly;
         var resourceName = $"{assembly.GetName().Name}.src.UI.Web.Assets.{fileName}";
-        using var stream = assembly.GetManifestResourceStream(resourceName)
-            ?? throw new InvalidOperationException($"Missing embedded asset: {resourceName}");
+        using var stream = assembly.GetManifestResourceStream(resourceName);
+        if (stream == null)
+            return false;
+
         using var reader = new StreamReader(stream, Encoding.UTF8);
-        return reader.ReadToEnd();
+        content = reader.ReadToEnd();
+        return true;
+    }
+
+    private static string? FindUiAssetPath(string fileName)
+    {
+        var searchRoots = new[]
+        {
+            AppContext.BaseDirectory,
+            Directory.GetCurrentDirectory()
+        };
+
+        foreach (var root in searchRoots)
+        {
+            if (string.IsNullOrWhiteSpace(root))
+                continue;
+
+            DirectoryInfo? current;
+            try
+            {
+                current = new DirectoryInfo(root);
+            }
+            catch
+            {
+                continue;
+            }
+
+            for (var depth = 0; depth < 8 && current != null; depth++)
+            {
+                var candidate = Path.Combine(current.FullName, "src", "UI", "Web", "Assets", fileName);
+                if (File.Exists(candidate))
+                    return candidate;
+
+                current = current.Parent;
+            }
+        }
+
+        return null;
     }
 
     private static string EnsureTrailingSlash(string prefix)
         => string.IsNullOrWhiteSpace(prefix)
             ? "http://localhost:5057/"
             : prefix.EndsWith("/", StringComparison.Ordinal) ? prefix : prefix + "/";
+
+    private string NormalizeRoutePath(string absolutePath)
+    {
+        var path = string.IsNullOrWhiteSpace(absolutePath) ? "/" : absolutePath;
+        if (string.IsNullOrEmpty(_routeBasePath))
+            return path;
+
+        if (path.Equals(_routeBasePath, StringComparison.OrdinalIgnoreCase) ||
+            path.Equals(_routeBasePath + "/", StringComparison.OrdinalIgnoreCase))
+        {
+            return "/";
+        }
+
+        var prefix = _routeBasePath + "/";
+        if (path.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+            return path[_routeBasePath.Length..];
+
+        return path;
+    }
+
+    private static string GetRouteBasePath(string prefix)
+    {
+        if (!Uri.TryCreate(prefix, UriKind.Absolute, out var uri))
+            return string.Empty;
+
+        var path = uri.AbsolutePath ?? "/";
+        if (string.IsNullOrWhiteSpace(path) || path == "/")
+            return string.Empty;
+
+        var normalized = path.TrimEnd('/');
+        return normalized.StartsWith("/", StringComparison.Ordinal)
+            ? normalized
+            : "/" + normalized;
+    }
+
+    private string Url(string relativePath)
+    {
+        var trimmed = (relativePath ?? string.Empty).Trim().TrimStart('/');
+        if (trimmed.Length == 0)
+            return string.IsNullOrEmpty(_routeBasePath) ? "/" : _routeBasePath + "/";
+
+        if (string.IsNullOrEmpty(_routeBasePath))
+            return "/" + trimmed;
+
+        return _routeBasePath + "/" + trimmed;
+    }
 
     private static void WriteText(HttpListenerResponse response, string body, string contentType, int status = 200)
     {
