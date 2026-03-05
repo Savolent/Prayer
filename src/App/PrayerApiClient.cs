@@ -4,7 +4,6 @@ using System.Globalization;
 using System.Linq;
 using System.Net.Http;
 using System.Net.Http.Json;
-using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Prayer.Contracts;
@@ -199,14 +198,10 @@ public sealed class PrayerApiClient
     private static AppPrayerRuntimeState DeserializeState(Contracts.RuntimeStateResponse snapshot)
     {
         GameState? state = null;
-        if (snapshot.State.HasValue)
+        if (snapshot.State != null)
         {
-            var stateElement = snapshot.State.Value;
-            if (stateElement.ValueKind != JsonValueKind.Null &&
-                stateElement.ValueKind != JsonValueKind.Undefined)
-            {
-                state = JsonSerializer.Deserialize<GameState>(stateElement.GetRawText());
-            }
+            var json = System.Text.Json.JsonSerializer.Serialize(snapshot.State);
+            state = System.Text.Json.JsonSerializer.Deserialize<GameState>(json);
         }
 
         return new AppPrayerRuntimeState(

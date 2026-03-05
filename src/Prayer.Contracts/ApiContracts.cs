@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Text.Json;
 
 namespace Prayer.Contracts;
 
@@ -43,15 +42,6 @@ public sealed record RuntimeSnapshotResponse(
     DateTime LastUpdatedUtc);
 
 public sealed record RuntimeStateResponse(
-    JsonElement? State,
-    IReadOnlyList<string> Memory,
-    IReadOnlyList<string> ExecutionStatusLines,
-    string? ControlInput,
-    int? CurrentScriptLine,
-    string? LastGenerationPrompt,
-    bool LoopEnabled);
-
-public sealed record RuntimeStateV2Response(
     RuntimeGameStateDto? State,
     IReadOnlyList<string> Memory,
     IReadOnlyList<string> ExecutionStatusLines,

@@ -1,18 +1,5 @@
 # Architecture Review Status (validated 2026-03-05)
 
-### High: runtime state contract is untyped (`JsonElement? State`)
-**Status:** Partially mitigated.
-
-Legacy `/api/runtime/sessions/{id}/state` still sends `JsonElement?`, and the app client still manually deserializes it.
-New `/api/runtime/sessions/{id}/state-v2` now sends typed `RuntimeGameStateDto? State` for schema/codegen consumers.
-
-**Current refs**
-- `src/Prayer.Contracts/ApiContracts.cs:45`
-- `src/Prayer.Contracts/ApiContracts.cs:54`
-- `src/Prayer/Program.cs:619`
-- `src/Prayer/Program.cs:664`
-- `src/App/PrayerApiClient.cs:199`
-
 ### Medium: `GameState` is both DTO and rendering/domain logic
 **Status:** Still true.
 
