@@ -22,6 +22,7 @@ public static class AppPaths
     public static readonly string CommandExecutionLogFile = Path.Combine(LogDir, "command_execution.log");
     public static readonly string ScriptNormalizationLogFile = Path.Combine(LogDir, "script_normalization.log");
     public static readonly string ScriptWriterContextLogFile = Path.Combine(LogDir, "script_writer_context.log");
+    public static readonly string AstWalkerLogFile = Path.Combine(LogDir, "ast_walker.log");
     public static readonly string ScriptGenerationExamplesFile = Path.Combine(CacheDir, "script_generation_examples.json");
     public static readonly string SavedBotsFile = Path.Combine(CacheDir, "saved_bots.json");
     public static readonly string SavedLlmSelectionFile = Path.Combine(CacheDir, "saved_llm_selection.json");
@@ -33,6 +34,18 @@ public static class AppPaths
     public static readonly string GalaxyMapFile = Path.Combine(CacheDir, "galaxy_map.json");
     public static readonly string GalaxyKnownPoisFile = Path.Combine(CacheDir, "known_pois.json");
 
+    private static readonly string[] DebugLogsToResetOnStartup =
+    {
+        LlmLogFile,
+        PlannerPromptLogFile,
+        PathfindLogFile,
+        SpaceMoltApiLogFile,
+        CommandExecutionLogFile,
+        ScriptNormalizationLogFile,
+        ScriptWriterContextLogFile,
+        AstWalkerLogFile
+    };
+
     public static void EnsureDirectories()
     {
         Directory.CreateDirectory(LogDir);
@@ -41,6 +54,21 @@ public static class AppPaths
         Directory.CreateDirectory(MarketsDir);
         Directory.CreateDirectory(ShipyardsDir);
         Directory.CreateDirectory(CatalogsDir);
+    }
+
+    public static void ResetDebugLogsOnStartup()
+    {
+        foreach (var path in DebugLogsToResetOnStartup)
+        {
+            try
+            {
+                File.WriteAllText(path, string.Empty);
+            }
+            catch
+            {
+                // Startup log reset is best-effort.
+            }
+        }
     }
 
     public static string GetAgentCheckpointFile(string botLabel)

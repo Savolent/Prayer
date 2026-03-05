@@ -25,6 +25,7 @@ public interface IAgentLogger
         string fullPrompt);
 
     void LogScriptNormalization(string source, string inputScript, string outputScript);
+    void LogAstWalker(string eventName, string detail);
 }
 
 public sealed class FileAgentLogger : IAgentLogger
@@ -130,6 +131,21 @@ public sealed class FileAgentLogger : IAgentLogger
         catch
         {
             // Script normalization logging should never block gameplay.
+        }
+    }
+
+    public void LogAstWalker(string eventName, string detail)
+    {
+        try
+        {
+            Directory.CreateDirectory(AppPaths.LogDir);
+            var line =
+                $"[{DateTime.UtcNow:O}] event={eventName} detail={detail}{Environment.NewLine}";
+            File.AppendAllText(AppPaths.AstWalkerLogFile, line);
+        }
+        catch
+        {
+            // AST walker logging should never block execution.
         }
     }
 

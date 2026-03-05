@@ -330,6 +330,7 @@ public sealed class CommandExecutionEngine
     private bool TryGetNextScriptCommand(GameState state, out CommandResult result)
     {
         result = new CommandResult();
+        LogAstWalker("step_scan_begin", "Scanning for next executable script node.");
 
         while (_frames.Count > 0)
         {
@@ -337,10 +338,21 @@ public sealed class CommandExecutionEngine
 
             if (frame.Index >= frame.Nodes.Count)
             {
+                LogAstWalker(
+                    "frame_complete",
+                    $"Frame exhausted kind={frame.Kind} path={frame.Path}.");
                 if (TryAdvanceCompletedLoop(frame, state))
+                {
+                    LogAstWalker(
+                        "loop_rewind",
+                        $"Loop rewound kind={frame.Kind} path={frame.Path}.");
                     continue;
+                }
 
                 _frames.RemoveAt(_frames.Count - 1);
+                LogAstWalker(
+                    "frame_pop",
+                    $"Popped frame kind={frame.Kind} path={frame.Path}.");
                 continue;
             }
 
@@ -351,11 +363,17 @@ public sealed class CommandExecutionEngine
             {
                 case DslCommandAstNode commandNode:
                     result = BuildCommandResult(commandNode);
+                    LogAstWalker(
+                        "emit_command",
+                        $"Selected command line={result.SourceLine?.ToString() ?? "?"} cmd={FormatCommand(result)} path={frame.Path}/{nodeIndex}.");
                     return true;
 
                 case DslRepeatAstNode repeatNode:
                 {
                     IReadOnlyList<DslAstNode> body = repeatNode.Body ?? Array.Empty<DslAstNode>();
+                    LogAstWalker(
+                        "repeat_visit",
+                        $"Visited repeat line={repeatNode.SourceLine} bodyCount={body.Count} path={frame.Path}/{nodeIndex}.");
                     if (body.Count > 0)
                     {
                         _frames.Add(new ExecutionFrame(
@@ -365,6 +383,9 @@ public sealed class CommandExecutionEngine
                             untilCondition: null,
                             untilConditionKnown: false,
                             path: $"{frame.Path}/{nodeIndex}"));
+                        LogAstWalker(
+                            "frame_push",
+                            $"Pushed repeat frame line={repeatNode.SourceLine} path={frame.Path}/{nodeIndex}.");
                     }
                     continue;
                 }
@@ -372,7 +393,17 @@ public sealed class CommandExecutionEngine
                 case DslIfAstNode ifNode:
                 {
                     IReadOnlyList<DslAstNode> body = ifNode.Body ?? Array.Empty<DslAstNode>();
-                    if (ShouldEnterIf(ifNode.Condition, state) && body.Count > 0)
+                    bool conditionKnown;
+                    bool conditionValue;
+                    bool shouldEnter = ShouldEnterIf(
+                        ifNode.Condition,
+                        state,
+                        out conditionKnown,
+                        out conditionValue);
+                    LogAstWalker(
+                        "if_visit",
+                        $"Visited if line={ifNode.SourceLine} cond={NormalizeCondition(ifNode.Condition)} known={conditionKnown} value={conditionValue} enter={shouldEnter} bodyCount={body.Count} path={frame.Path}/{nodeIndex}.");
+                    if (shouldEnter && body.Count > 0)
                     {
                         _frames.Add(new ExecutionFrame(
                             body,
@@ -381,6 +412,9 @@ public sealed class CommandExecutionEngine
                             untilCondition: null,
                             untilConditionKnown: false,
                             path: $"{frame.Path}/{nodeIndex}"));
+                        LogAstWalker(
+                            "frame_push",
+                            $"Pushed if frame line={ifNode.SourceLine} path={frame.Path}/{nodeIndex}.");
                     }
                     continue;
                 }
@@ -388,8 +422,16 @@ public sealed class CommandExecutionEngine
                 case DslUntilAstNode untilNode:
                 {
                     bool conditionKnown;
-                    bool shouldEnter = ShouldEnterUntil(untilNode.Condition, state, out conditionKnown);
+                    bool conditionValue;
+                    bool shouldEnter = ShouldEnterUntil(
+                        untilNode.Condition,
+                        state,
+                        out conditionKnown,
+                        out conditionValue);
                     IReadOnlyList<DslAstNode> body = untilNode.Body ?? Array.Empty<DslAstNode>();
+                    LogAstWalker(
+                        "until_visit",
+                        $"Visited until line={untilNode.SourceLine} cond={NormalizeCondition(untilNode.Condition)} known={conditionKnown} value={conditionValue} enter={shouldEnter} bodyCount={body.Count} path={frame.Path}/{nodeIndex}.");
                     if (shouldEnter && body.Count > 0)
                     {
                         _frames.Add(new ExecutionFrame(
@@ -399,12 +441,16 @@ public sealed class CommandExecutionEngine
                             NormalizeCondition(untilNode.Condition),
                             conditionKnown,
                             path: $"{frame.Path}/{nodeIndex}"));
+                        LogAstWalker(
+                            "frame_push",
+                            $"Pushed until frame line={untilNode.SourceLine} path={frame.Path}/{nodeIndex}.");
                     }
                     continue;
                 }
             }
         }
 
+        LogAstWalker("step_scan_end", "No executable script node found.");
         return false;
     }
 
@@ -435,25 +481,41 @@ public sealed class CommandExecutionEngine
         return true;
     }
 
-    private static bool ShouldEnterIf(string? condition, GameState state)
+    private static bool ShouldEnterIf(
+        string? condition,
+        GameState state,
+        out bool conditionKnown,
+        out bool conditionValue)
     {
-        if (!DslBooleanEvaluator.TryEvaluate(NormalizeCondition(condition), state, out var conditionValue))
-            return true;
-
-        return conditionValue;
-    }
-
-    private static bool ShouldEnterUntil(string? condition, GameState state, out bool conditionKnown)
-    {
-        var normalized = NormalizeCondition(condition);
-        if (!DslBooleanEvaluator.TryEvaluate(normalized, state, out var conditionValue))
+        if (!DslBooleanEvaluator.TryEvaluate(NormalizeCondition(condition), state, out var evaluated))
         {
             conditionKnown = false;
+            conditionValue = false;
             return true;
         }
 
         conditionKnown = true;
-        return !conditionValue;
+        conditionValue = evaluated;
+        return evaluated;
+    }
+
+    private static bool ShouldEnterUntil(
+        string? condition,
+        GameState state,
+        out bool conditionKnown,
+        out bool conditionValue)
+    {
+        var normalized = NormalizeCondition(condition);
+        if (!DslBooleanEvaluator.TryEvaluate(normalized, state, out var evaluated))
+        {
+            conditionKnown = false;
+            conditionValue = false;
+            return true;
+        }
+
+        conditionKnown = true;
+        conditionValue = evaluated;
+        return !evaluated;
     }
 
     private static string NormalizeCondition(string? condition)
@@ -518,6 +580,7 @@ public sealed class CommandExecutionEngine
     private void ResetFrames()
     {
         _frames.Clear();
+        LogAstWalker("reset_frames", "Cleared execution frames.");
         if (_scriptAst?.Statements == null || _scriptAst.Statements.Count == 0)
             return;
 
@@ -528,6 +591,9 @@ public sealed class CommandExecutionEngine
             untilCondition: null,
             untilConditionKnown: false,
             path: RootFramePath));
+        LogAstWalker(
+            "frame_push",
+            $"Initialized root frame statements={_scriptAst.Statements.Count}.");
     }
 
     private bool IsExecutableAction(string? action)
@@ -660,6 +726,9 @@ public sealed class CommandExecutionEngine
 
         _frames.Clear();
         _frames.AddRange(restored);
+        LogAstWalker(
+            "restore_frames",
+            $"Restored frame stack count={_frames.Count}.");
         return true;
     }
 
@@ -721,6 +790,21 @@ public sealed class CommandExecutionEngine
     private static bool TryParseFrameKind(string? rawKind, out ExecutionFrameKind kind)
     {
         return Enum.TryParse(rawKind, ignoreCase: true, out kind);
+    }
+
+    private void LogAstWalker(string eventName, string detail)
+    {
+        _logger.LogAstWalker(eventName, $"{detail} stack={BuildFrameStackSummary()}");
+    }
+
+    private string BuildFrameStackSummary()
+    {
+        if (_frames.Count == 0)
+            return "[]";
+
+        return "[" + string.Join(
+            " > ",
+            _frames.Select(f => $"{f.Kind}:{f.Path}@{f.Index}/{f.Nodes.Count}")) + "]";
     }
 
     private void PersistCheckpoint()

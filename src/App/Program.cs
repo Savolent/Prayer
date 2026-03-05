@@ -14,6 +14,7 @@ class Program
     static async Task Main(string[] args)
     {
         AppPaths.EnsureDirectories();
+        AppPaths.ResetDebugLogsOnStartup();
         var llamaCppBaseUrl = Environment.GetEnvironmentVariable("LLAMACPP_BASE_URL")
             ?? "http://localhost:8080";
         var llamaCppModel = Environment.GetEnvironmentVariable("LLAMACPP_MODEL")
