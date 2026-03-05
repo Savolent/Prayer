@@ -54,15 +54,13 @@ public abstract class AutoDockSingleTurnCommand : ISingleTurnCommand
 
 public abstract class AutoDockMultiTurnCommand : IMultiTurnCommand
 {
-    private string? _startFailureMessage;
-
     public abstract string Name { get; }
     protected virtual bool RequiresStation => false;
     public virtual DslCommandSyntax GetDslSyntax() => new();
 
     public abstract string BuildHelp(GameState state);
     protected abstract bool IsAvailableWhenDocked(GameState state);
-    protected abstract Task<CommandExecutionResult?> StartDockedAsync(
+    protected abstract Task<(bool finished, CommandExecutionResult? result)> StartDockedAsync(
         IRuntimeTransport client,
         CommandResult cmd,
         GameState state);
@@ -78,12 +76,11 @@ public abstract class AutoDockMultiTurnCommand : IMultiTurnCommand
         return AutoDockCommandState.HasAutoDockPath(state, RequiresStation);
     }
 
-    public async Task<CommandExecutionResult?> StartAsync(
+    public async Task<(bool finished, CommandExecutionResult? result)> StartAsync(
         IRuntimeTransport client,
         CommandResult cmd,
         GameState state)
     {
-        _startFailureMessage = null;
         var ensured = await AutoDockCommandState.EnsureDockedReadyAsync(
             client,
             state,
@@ -91,8 +88,10 @@ public abstract class AutoDockMultiTurnCommand : IMultiTurnCommand
             RequiresStation);
         if (!ensured.Ok)
         {
-            _startFailureMessage = ensured.ErrorMessage;
-            return null;
+            return (true, new CommandExecutionResult
+            {
+                ResultMessage = ensured.ErrorMessage
+            });
         }
 
         return await StartDockedAsync(client, cmd, ensured.State);
@@ -102,16 +101,6 @@ public abstract class AutoDockMultiTurnCommand : IMultiTurnCommand
         IRuntimeTransport client,
         GameState state)
     {
-        if (!string.IsNullOrWhiteSpace(_startFailureMessage))
-        {
-            var message = _startFailureMessage;
-            _startFailureMessage = null;
-            return (true, new CommandExecutionResult
-            {
-                ResultMessage = message
-            });
-        }
-
         return await ContinueDockedAsync(client, state);
     }
 

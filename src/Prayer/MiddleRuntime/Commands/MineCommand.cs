@@ -42,7 +42,7 @@ public class MineCommand : IMultiTurnCommand, IDslCommandGrammar
     public string BuildHelp(GameState state)
         => "- mine [asteroid_belt|asteroid|gas_cloud|ice_field|resourceId] → mine here, auto-go to local POI type, or find+mine a resource";
 
-    public async Task<CommandExecutionResult?> StartAsync(
+    public async Task<(bool finished, CommandExecutionResult? result)> StartAsync(
         IRuntimeTransport client,
         CommandResult cmd,
         GameState state)
@@ -65,7 +65,7 @@ public class MineCommand : IMultiTurnCommand, IDslCommandGrammar
                 {
                     _stopRequested = true;
                     _stopReason = $"No local mining POI found in system {state.System}.";
-                    return new CommandExecutionResult { ResultMessage = _stopReason };
+                    return FinishWithStopReason();
                 }
 
                 _targetPoiId = defaultLocalPoi.Id;
@@ -90,7 +90,7 @@ public class MineCommand : IMultiTurnCommand, IDslCommandGrammar
                 {
                     _stopRequested = true;
                     _stopReason = $"No local POI of type '{requestedType}' in system {state.System}.";
-                    return new CommandExecutionResult { ResultMessage = _stopReason };
+                    return FinishWithStopReason();
                 }
 
                 _targetPoiId = matchingLocalPoi.Id;
@@ -120,7 +120,13 @@ public class MineCommand : IMultiTurnCommand, IDslCommandGrammar
 
         var response = await ExecuteStepAsync(client, state);
 
-        return new CommandExecutionResult
+        if (_stopRequested)
+            return FinishWithStopReason();
+
+        if (!string.IsNullOrWhiteSpace(_completionMessage))
+            return FinishWithCompletionMessage();
+
+        return (false, new CommandExecutionResult
         {
             ResultMessage = _stopReason
                 ?? _completionMessage
@@ -128,7 +134,7 @@ public class MineCommand : IMultiTurnCommand, IDslCommandGrammar
                 ?? (_resourceMode
                     ? $"Mining resource `{_resourceId}`..."
                     : "Mining...")
-        };
+        });
     }
 
     public async Task<(bool finished, CommandExecutionResult? result)> ContinueAsync(

@@ -23,7 +23,6 @@ public class GoCommand : IMultiTurnCommand, IDslCommandGrammar
     private string? _target;
     private string? _resolvedSystemTarget;
     private string? _resolvedPoiTarget;
-    private CommandExecutionResult? _pendingCompletion;
     private bool _didMoveToTarget;
 
     public bool IsAvailable(GameState state)
@@ -40,7 +39,7 @@ public class GoCommand : IMultiTurnCommand, IDslCommandGrammar
     public string BuildHelp(GameState state)
         => "- go <identifier> → go to a POI or any system name; auto-pathfinds (not current POI)";
 
-    public async Task<CommandExecutionResult?> StartAsync(
+    public async Task<(bool finished, CommandExecutionResult? result)> StartAsync(
         IRuntimeTransport client,
         CommandResult cmd,
         GameState state)
@@ -48,15 +47,14 @@ public class GoCommand : IMultiTurnCommand, IDslCommandGrammar
         _target = cmd.Arg1?.Trim();
         _resolvedSystemTarget = null;
         _resolvedPoiTarget = null;
-        _pendingCompletion = null;
         _didMoveToTarget = false;
 
         if (string.IsNullOrWhiteSpace(_target))
         {
-            return new CommandExecutionResult
+            return (true, new CommandExecutionResult
             {
                 ResultMessage = "No go target provided."
-            };
+            });
         }
 
         var resolved = await ResolveTargetAsync(client, state, _target);
@@ -64,19 +62,16 @@ public class GoCommand : IMultiTurnCommand, IDslCommandGrammar
         {
             string unknownTarget = _target;
             _target = null;
-            return new CommandExecutionResult
+            return (true, new CommandExecutionResult
             {
                 ResultMessage = $"Unknown go target: {unknownTarget}. Target is not in the known galaxy map cache."
-            };
+            });
         }
 
         _resolvedSystemTarget = resolved.systemId;
         _resolvedPoiTarget = resolved.poiId;
 
-        var step = await ExecuteNextStepAsync(client, state);
-        if (step.finished)
-            _pendingCompletion = step.result;
-        return step.result;
+        return await ExecuteNextStepAsync(client, state);
     }
 
     public async Task<(bool finished, CommandExecutionResult? result)> ContinueAsync(
@@ -85,10 +80,7 @@ public class GoCommand : IMultiTurnCommand, IDslCommandGrammar
     {
         if (string.IsNullOrWhiteSpace(_target))
         {
-            var completion = _pendingCompletion;
-            _pendingCompletion = null;
-
-            return (true, completion ?? new CommandExecutionResult
+            return (true, new CommandExecutionResult
             {
                 ResultMessage = "Go complete."
             });

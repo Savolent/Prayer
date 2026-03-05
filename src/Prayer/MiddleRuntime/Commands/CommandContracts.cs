@@ -64,7 +64,7 @@ public interface ISingleTurnCommand : ICommand
 
 public interface IMultiTurnCommand : ICommand
 {
-    Task<CommandExecutionResult?> StartAsync(
+    Task<(bool finished, CommandExecutionResult? result)> StartAsync(
         IRuntimeTransport client,
         CommandResult result,
         GameState state);

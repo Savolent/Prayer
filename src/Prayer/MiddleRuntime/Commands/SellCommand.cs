@@ -31,18 +31,20 @@ public class SellCommand : AutoDockMultiTurnCommand, IDslCommandGrammar
     public override string BuildHelp(GameState state)
         => "- sell <item|cargo> → sell one item or all cargo";
 
-    protected override async Task<CommandExecutionResult?> StartDockedAsync(
+    protected override async Task<(bool finished, CommandExecutionResult? result)> StartDockedAsync(
         IRuntimeTransport client,
         CommandResult cmd,
         GameState state)
     {
+        _sellQueue = null;
+
         if (cmd.Arg1 == null)
-            return null;
+            return (true, null);
 
         // --- SINGLE ITEM MODE ---
         if (!string.Equals(cmd.Arg1, "cargo", StringComparison.OrdinalIgnoreCase))
         {
-            return await SellOneAsync(client, state, cmd.Arg1);
+            return (true, await SellOneAsync(client, state, cmd.Arg1));
         }
 
         // --- MULTI-STEP MODE ---
@@ -53,16 +55,24 @@ public class SellCommand : AutoDockMultiTurnCommand, IDslCommandGrammar
 
         if (_sellQueue.Count == 0)
         {
-            return new CommandExecutionResult
+            return (true, new CommandExecutionResult
             {
                 ResultMessage = "No sellable cargo."
-            };
+            });
         }
 
         var first = _sellQueue[0];
         _sellQueue.RemoveAt(0);
+        var firstResult = await SellOneAsync(client, state, first);
+        if (_sellQueue.Count == 0)
+        {
+            return (true, firstResult ?? new CommandExecutionResult
+            {
+                ResultMessage = "Finished selling cargo."
+            });
+        }
 
-        return await SellOneAsync(client, state, first);
+        return (false, firstResult);
     }
 
     protected override async Task<(bool finished, CommandExecutionResult? result)> ContinueDockedAsync(

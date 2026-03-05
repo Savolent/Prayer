@@ -237,15 +237,24 @@ public sealed class CommandExecutionEngine
                 SetActiveCommand(multiTurnCommand, result);
                 PersistCheckpoint();
 
+                (bool finished, CommandExecutionResult? response) startResult;
                 try
                 {
-                    await multiTurnCommand.StartAsync(client, result, state);
+                    startResult = await multiTurnCommand.StartAsync(client, result, state);
                 }
                 catch
                 {
                     ClearActiveCommand();
                     PersistCheckpoint();
                     throw;
+                }
+
+                if (startResult.finished)
+                {
+                    message = startResult.response?.ResultMessage;
+                    shouldAddMemory = true;
+                    ClearActiveCommand();
+                    _setStatus("Waiting");
                 }
             }
             else if (command is ISingleTurnCommand singleTurnCommand)
