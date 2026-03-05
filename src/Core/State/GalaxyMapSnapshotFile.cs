@@ -124,7 +124,13 @@ internal static class GalaxyMapSnapshotFile
                     if (string.IsNullOrWhiteSpace(poiId))
                         continue;
 
-                    poiList.Add(new GalaxyPoiInfo { Id = poiId });
+                    TryGetPosition(poi, out var poiX, out var poiY);
+                    poiList.Add(new GalaxyPoiInfo
+                    {
+                        Id = poiId,
+                        X = poiX,
+                        Y = poiY
+                    });
                 }
             }
 
@@ -164,6 +170,8 @@ internal static class GalaxyMapSnapshotFile
                 SystemId = p.SystemId,
                 Name = p.Name,
                 Type = p.Type,
+                X = p.X,
+                Y = p.Y,
                 HasBase = p.HasBase,
                 BaseId = p.BaseId,
                 BaseName = p.BaseName,
@@ -186,14 +194,23 @@ internal static class GalaxyMapSnapshotFile
                 map.Systems.Add(system);
             }
 
-            bool alreadyExists = (system.Pois ?? new List<GalaxyPoiInfo>())
-                .Any(p => string.Equals(p.Id, knownPoi.Id, StringComparison.Ordinal));
+            system.Pois ??= new List<GalaxyPoiInfo>();
+            var existingPoi = system.Pois.FirstOrDefault(p =>
+                string.Equals(p.Id, knownPoi.Id, StringComparison.Ordinal));
 
-            if (!alreadyExists)
+            if (existingPoi == null)
             {
-                system.Pois ??= new List<GalaxyPoiInfo>();
-                system.Pois.Add(new GalaxyPoiInfo { Id = knownPoi.Id });
+                system.Pois.Add(new GalaxyPoiInfo
+                {
+                    Id = knownPoi.Id,
+                    X = knownPoi.X,
+                    Y = knownPoi.Y
+                });
+                continue;
             }
+
+            existingPoi.X ??= knownPoi.X;
+            existingPoi.Y ??= knownPoi.Y;
         }
     }
 
@@ -256,7 +273,13 @@ internal static class GalaxyMapSnapshotFile
                     if (string.IsNullOrWhiteSpace(poiId))
                         continue;
 
-                    poiList.Add(new GalaxyPoiInfo { Id = poiId });
+                    TryGetPosition(poi, out var poiX, out var poiY);
+                    poiList.Add(new GalaxyPoiInfo
+                    {
+                        Id = poiId,
+                        X = poiX,
+                        Y = poiY
+                    });
                 }
             }
 
@@ -342,6 +365,19 @@ internal static class GalaxyMapSnapshotFile
         return prop.ValueKind == JsonValueKind.String
             ? prop.GetString()
             : null;
+    }
+
+    private static void TryGetPosition(JsonElement obj, out double? x, out double? y)
+    {
+        x = TryGetDouble(obj, "x") ?? TryGetDouble(obj, "X");
+        y = TryGetDouble(obj, "y") ?? TryGetDouble(obj, "Y");
+
+        if (TryGetObject(obj, "position", out var positionObj) ||
+            TryGetObject(obj, "Position", out positionObj))
+        {
+            x ??= TryGetDouble(positionObj, "x") ?? TryGetDouble(positionObj, "X");
+            y ??= TryGetDouble(positionObj, "y") ?? TryGetDouble(positionObj, "Y");
+        }
     }
 
     private static double? TryGetDouble(JsonElement obj, string key)
@@ -433,6 +469,8 @@ internal static class GalaxyKnownPoiSnapshotFile
                 system_id = p.SystemId,
                 name = p.Name,
                 type = p.Type,
+                x = p.X,
+                y = p.Y,
                 has_base = p.HasBase,
                 base_id = p.BaseId,
                 base_name = p.BaseName,
@@ -474,12 +512,23 @@ internal static class GalaxyKnownPoiSnapshotFile
                 lastSeenUtc = parsed.ToUniversalTime();
             }
 
+            double? x = TryGetDouble(poi, "x") ?? TryGetDouble(poi, "X");
+            double? y = TryGetDouble(poi, "y") ?? TryGetDouble(poi, "Y");
+            if (TryGetObject(poi, "position", out var positionObj) ||
+                TryGetObject(poi, "Position", out positionObj))
+            {
+                x ??= TryGetDouble(positionObj, "x") ?? TryGetDouble(positionObj, "X");
+                y ??= TryGetDouble(positionObj, "y") ?? TryGetDouble(positionObj, "Y");
+            }
+
             list.Add(new GalaxyKnownPoiInfo
             {
                 Id = id,
                 SystemId = systemId,
                 Name = TryGetString(poi, "name") ?? TryGetString(poi, "Name") ?? "",
                 Type = TryGetString(poi, "type") ?? TryGetString(poi, "Type") ?? "",
+                X = x,
+                Y = y,
                 HasBase = TryGetBool(poi, "has_base") ?? TryGetBool(poi, "HasBase") ?? false,
                 BaseId = TryGetString(poi, "base_id") ?? TryGetString(poi, "BaseId"),
                 BaseName = TryGetString(poi, "base_name") ?? TryGetString(poi, "BaseName"),
@@ -513,5 +562,36 @@ internal static class GalaxyKnownPoiSnapshotFile
         }
 
         return prop.GetBoolean();
+    }
+
+    private static bool TryGetObject(JsonElement obj, string key, out JsonElement value)
+    {
+        value = default;
+
+        if (obj.ValueKind != JsonValueKind.Object)
+            return false;
+
+        if (!obj.TryGetProperty(key, out var prop) ||
+            prop.ValueKind != JsonValueKind.Object)
+        {
+            return false;
+        }
+
+        value = prop;
+        return true;
+    }
+
+    private static double? TryGetDouble(JsonElement obj, string key)
+    {
+        if (obj.ValueKind != JsonValueKind.Object)
+            return null;
+
+        if (!obj.TryGetProperty(key, out var prop))
+            return null;
+
+        if (prop.ValueKind == JsonValueKind.Number && prop.TryGetDouble(out var value))
+            return value;
+
+        return null;
     }
 }

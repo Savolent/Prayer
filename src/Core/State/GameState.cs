@@ -850,6 +850,8 @@ public class GalaxySystemInfo
 public class GalaxyPoiInfo
 {
     public string Id { get; set; } = "";
+    public double? X { get; set; }
+    public double? Y { get; set; }
 }
 
 public class GalaxyKnownPoiInfo
@@ -858,6 +860,8 @@ public class GalaxyKnownPoiInfo
     public string SystemId { get; set; } = "";
     public string Name { get; set; } = "";
     public string Type { get; set; } = "";
+    public double? X { get; set; }
+    public double? Y { get; set; }
     public bool HasBase { get; set; }
     public string? BaseId { get; set; }
     public string? BaseName { get; set; }

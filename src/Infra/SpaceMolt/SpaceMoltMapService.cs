@@ -105,6 +105,8 @@ internal sealed class SpaceMoltMapService
                     SystemId = systemId,
                     Name = poi.Name ?? "",
                     Type = poi.Type ?? "",
+                    X = poi.X,
+                    Y = poi.Y,
                     HasBase = poi.HasBase,
                     BaseId = poi.BaseId,
                     BaseName = poi.BaseName,

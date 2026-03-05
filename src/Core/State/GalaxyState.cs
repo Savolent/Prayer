@@ -443,7 +443,12 @@ internal static class GalaxyStateHub
                         .Where(c => !string.IsNullOrWhiteSpace(c))
                         .ToList(),
                     Pois = (system.Pois ?? new List<GalaxyPoiInfo>())
-                        .Select(poi => new GalaxyPoiInfo { Id = poi.Id })
+                        .Select(poi => new GalaxyPoiInfo
+                        {
+                            Id = poi.Id,
+                            X = poi.X,
+                            Y = poi.Y
+                        })
                         .ToList()
                 })
                 .ToList(),
@@ -454,6 +459,8 @@ internal static class GalaxyStateHub
                     SystemId = poi.SystemId,
                     Name = poi.Name,
                     Type = poi.Type,
+                    X = poi.X,
+                    Y = poi.Y,
                     HasBase = poi.HasBase,
                     BaseId = poi.BaseId,
                     BaseName = poi.BaseName,
