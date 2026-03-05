@@ -9,6 +9,9 @@ using System.Threading.Channels;
 
 public sealed class HtmxBotWindow : IAppUi
 {
+    private static readonly Lazy<string> UiCssAsset = new(() => ReadEmbeddedAsset("ui.css"));
+    private static readonly Lazy<string> UiJsAsset = new(() => ReadEmbeddedAsset("ui.js"));
+
     private readonly object _lock = new();
     private readonly string _prefix;
     private bool _running;
@@ -213,6 +216,18 @@ public sealed class HtmxBotWindow : IAppUi
             return;
         }
 
+        if (req.HttpMethod == "GET" && path == "/assets/ui.css")
+        {
+            WriteText(ctx.Response, UiCssAsset.Value, "text/css; charset=utf-8");
+            return;
+        }
+
+        if (req.HttpMethod == "GET" && path == "/assets/ui.js")
+        {
+            WriteText(ctx.Response, UiJsAsset.Value, "application/javascript; charset=utf-8");
+            return;
+        }
+
         if (req.HttpMethod == "GET" && path == "/partial/bots")
         {
             WriteText(ctx.Response, BuildBotsHtml(), "text/html; charset=utf-8");
@@ -260,6 +275,12 @@ public sealed class HtmxBotWindow : IAppUi
         if (req.HttpMethod == "GET" && path == "/partial/current-script")
         {
             WriteText(ctx.Response, BuildCurrentScriptStateJson(), "application/json; charset=utf-8");
+            return;
+        }
+
+        if (req.HttpMethod == "GET" && path == "/partial/map-data")
+        {
+            WriteText(ctx.Response, BuildMapDataJson(), "application/json; charset=utf-8");
             return;
         }
 
@@ -409,14 +430,7 @@ public sealed class HtmxBotWindow : IAppUi
         string selectedProvider;
         string selectedModel;
         string currentScript;
-        int? currentScriptLine;
         bool activeBotLoopEnabled;
-        var commandNames = CommandCatalog.All
-            .Select(c => c.Name)
-            .Where(n => !string.IsNullOrWhiteSpace(n))
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .OrderBy(n => n, StringComparer.OrdinalIgnoreCase)
-            .ToList();
 
         lock (_lock)
         {
@@ -424,7 +438,6 @@ public sealed class HtmxBotWindow : IAppUi
             selectedProvider = _selectedProvider;
             selectedModel = _selectedModel;
             currentScript = _snapshot.ControlInput ?? "";
-            currentScriptLine = _snapshot.CurrentScriptLine;
             activeBotLoopEnabled = _snapshot.ActiveBotLoopEnabled;
         }
 
@@ -446,50 +459,8 @@ public sealed class HtmxBotWindow : IAppUi
         sb.AppendLine("<link rel='stylesheet' href='https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css'>");
         sb.AppendLine("<link rel='stylesheet' href='https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/material-darker.min.css'>");
         sb.AppendLine("<script src='https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js'></script>");
-        sb.AppendLine("<style>");
-        sb.AppendLine("html, body { height: 100%; }");
-        sb.AppendLine("body { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; background:#0f1115; color:#d7dae0; margin:0; }");
-        sb.AppendLine(".app { padding: 12px; height: 100vh; box-sizing: border-box; }");
-        sb.AppendLine(".grid { display:grid; grid-template-columns: 280px 1fr 420px; gap:12px; align-items:stretch; height:100%; min-height:0; }");
-        sb.AppendLine(".card { border:1px solid #2a2e38; background:#171a21; padding:10px; border-radius:8px; display:flex; flex-direction:column; min-height:0; }");
-        sb.AppendLine("h3 { margin:0 0 8px 0; font-size:14px; color:#8eb8ff; }");
-        sb.AppendLine("h4 { margin:10px 0 6px 0; font-size:12px; color:#8eb8ff; }");
-        sb.AppendLine("pre { margin:0; white-space:pre-wrap; word-break:break-word; }");
-        sb.AppendLine("textarea, select, input, button { width:100%; box-sizing:border-box; background:#0f1115; color:#d7dae0; border:1px solid #2a2e38; border-radius:6px; padding:6px; }");
-        sb.AppendLine("button { cursor:pointer; } .row { display:flex; gap:8px; } .row > * { flex:1; } .small { font-size:12px; color:#9ca3b2; } .list { display:flex; flex-direction:column; gap:6px; } .active { border-color:#5ac977; }");
-        sb.AppendLine(".sidebar { position:relative; overflow:hidden; }");
-        sb.AppendLine(".sidebar-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:8px; }");
-        sb.AppendLine(".sidebar-header h3 { margin:0; }");
-        sb.AppendLine(".sidebar-actions { display:flex; gap:6px; }");
-        sb.AppendLine(".sidebar-llm { display:flex; align-items:center; gap:6px; margin-bottom:8px; }");
-        sb.AppendLine(".sidebar-llm-name { flex:1; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }");
-        sb.AppendLine(".icon-btn { width:auto; min-width:34px; padding:6px 10px; font-weight:700; line-height:1; }");
-        sb.AppendLine(".panel-layer { position:absolute; inset:0; background:rgba(8,10,14,0.86); display:none; align-items:flex-start; justify-content:center; padding:10px; box-sizing:border-box; z-index:10; }");
-        sb.AppendLine(".panel-layer.open { display:flex; }");
-        sb.AppendLine(".panel-card { width:100%; max-height:100%; overflow-y:auto; border:1px solid #2a2e38; background:#171a21; border-radius:8px; padding:10px; box-sizing:border-box; }");
-        sb.AppendLine(".panel-card-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; gap:8px; }");
-        sb.AppendLine(".panel-card-header h4 { margin:0; }");
-        sb.AppendLine(".panel-card-close { width:auto; min-width:68px; }");
-        sb.AppendLine(".tabs { display:flex; gap:6px; margin-bottom:8px; }");
-        sb.AppendLine(".tab-btn { width:auto; flex:1; background:#0f1115; border:1px solid #2a2e38; color:#d7dae0; border-radius:6px; padding:6px 8px; font-size:12px; }");
-        sb.AppendLine(".tab-btn.active { border-color:#5ac977; color:#e8ffef; }");
-        sb.AppendLine(".tab-pane { display:none; }");
-        sb.AppendLine(".tab-pane.active { display:block; }");
-        sb.AppendLine(".catalog-search { margin:0 0 8px 0; }");
-        sb.AppendLine("details.catalog-group { margin-bottom:8px; border:1px solid #2a2e38; border-radius:6px; padding:6px; background:#11141a; }");
-        sb.AppendLine("details.catalog-group > summary { cursor:pointer; color:#8eb8ff; }");
-        sb.AppendLine(".catalog-list { display:flex; flex-direction:column; gap:4px; margin-top:6px; }");
-        sb.AppendLine(".catalog-entry { white-space:pre-wrap; word-break:break-word; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }");
-        sb.AppendLine(".CodeMirror { border:1px solid #2a2e38; border-radius:6px; height:190px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size:13px; }");
-        sb.AppendLine("#live-script-editor .CodeMirror { height:140px; }");
-        sb.AppendLine(".CodeMirror .run-line-active { background: rgba(90, 201, 119, 0.12); }");
-        sb.AppendLine(".cm-s-material-darker .cm-atom { color:#ffd166; font-weight:600; }");
-        sb.AppendLine(".cm-s-material-darker .cm-variable-2 { color:#79c0ff; font-weight:600; }");
-        sb.AppendLine(".cm-s-material-darker .cm-string-2 { color:#ff9e64; font-weight:600; }");
-        sb.AppendLine(".script-code { white-space:pre-wrap; word-break:break-word; }");
-        sb.AppendLine("#state-panel { overflow-y:auto; }");
-        sb.AppendLine("#right-panel { overflow-y:auto; }");
-        sb.AppendLine("</style></head><body><div class='app'><div class='grid'>");
+        sb.AppendLine("<link rel='stylesheet' href='/assets/ui.css'>");
+        sb.AppendLine("</head><body><div class='app'><div class='grid'>");
 
         sb.AppendLine("<div class='card sidebar'><div class='sidebar-header'><h3>Bots</h3><div class='sidebar-actions'><button id='open-add-bot' class='icon-btn' type='button' title='Add Bot'>+</button></div></div>");
         sb.AppendLine("<div class='sidebar-llm'><div id='llm-summary' class='sidebar-llm-name' hx-get='/partial/llm-summary' hx-trigger='load, every 1000ms' hx-swap='innerHTML'>"
@@ -521,12 +492,16 @@ public sealed class HtmxBotWindow : IAppUi
         sb.AppendLine("<button type='button' class='tab-btn' data-tab='shipyard'>Shipyard</button>");
         sb.AppendLine("<button type='button' class='tab-btn' data-tab='cantina'>Cantina</button>");
         sb.AppendLine("<button type='button' class='tab-btn' data-tab='catalog'>Catalog</button>");
+        sb.AppendLine("<button type='button' class='tab-btn' data-tab='map'>Map</button>");
         sb.AppendLine("</div>");
+        sb.AppendLine("<div class='tab-content'>");
         sb.AppendLine("<div id='state-pane-space' class='tab-pane active' hx-get='/partial/state?tab=space' hx-trigger='load, every 1000ms' hx-swap='innerHTML'></div>");
         sb.AppendLine("<div id='state-pane-trade' class='tab-pane' hx-get='/partial/state?tab=trade' hx-trigger='load, every 1000ms' hx-swap='innerHTML'></div>");
         sb.AppendLine("<div id='state-pane-shipyard' class='tab-pane' hx-get='/partial/state?tab=shipyard' hx-trigger='load, every 1000ms' hx-swap='innerHTML'></div>");
         sb.AppendLine("<div id='state-pane-cantina' class='tab-pane' hx-get='/partial/state?tab=cantina' hx-trigger='load, every 1000ms' hx-swap='innerHTML'></div>");
         sb.AppendLine("<div id='state-pane-catalog' class='tab-pane' hx-get='/partial/state?tab=catalog' hx-trigger='load' hx-swap='innerHTML'></div>");
+        sb.AppendLine("<div id='state-pane-map' class='tab-pane' hx-get='/partial/state?tab=map' hx-trigger='load' hx-swap='innerHTML'></div>");
+        sb.AppendLine("</div>");
         sb.AppendLine("</div>");
 
         sb.AppendLine("<div class='card'><h3>Script</h3>");
@@ -544,206 +519,7 @@ public sealed class HtmxBotWindow : IAppUi
         sb.AppendLine("<h4>Prompt</h4><form hx-post='/api/prompt' hx-swap='none' class='list'><textarea name='prompt' rows='4' placeholder='prompt for script generation'></textarea><button type='submit'>Generate Script</button></form>");
         sb.AppendLine("<form hx-post='/api/prompt-active-missions' hx-swap='none'><button type='submit'>Generate From Active Mission Objectives</button></form>");
         sb.AppendLine("<div id='right-panel' hx-get='/partial/right' hx-trigger='load, every 1000ms' hx-swap='innerHTML'></div></div>");
-
-        sb.AppendLine("<script>");
-        sb.AppendLine("document.addEventListener('click', function (e) {");
-        sb.AppendLine("  var btn = e.target.closest('.tab-btn');");
-        sb.AppendLine("  if (!btn) return;");
-        sb.AppendLine("  var panel = document.getElementById('state-panel');");
-        sb.AppendLine("  if (!panel) return;");
-        sb.AppendLine("  var tab = btn.getAttribute('data-tab');");
-        sb.AppendLine("  panel.querySelectorAll('.tab-btn').forEach(function (b) { b.classList.toggle('active', b === btn); });");
-        sb.AppendLine("  panel.querySelectorAll('.tab-pane').forEach(function (p) { p.classList.remove('active'); });");
-        sb.AppendLine("  var target = document.getElementById('state-pane-' + tab);");
-        sb.AppendLine("  if (target) target.classList.add('active');");
-        sb.AppendLine("});");
-        sb.AppendLine("window.closeAllSidebarLayers = function () {");
-        sb.AppendLine("  document.querySelectorAll('.panel-layer.open').forEach(function (layer) { layer.classList.remove('open'); });");
-        sb.AppendLine("};");
-        sb.AppendLine("window.openSidebarLayer = function (id) {");
-        sb.AppendLine("  window.closeAllSidebarLayers();");
-        sb.AppendLine("  var layer = document.getElementById(id);");
-        sb.AppendLine("  if (layer) layer.classList.add('open');");
-        sb.AppendLine("};");
-        sb.AppendLine("document.addEventListener('click', function (e) {");
-        sb.AppendLine("  var addBtn = e.target.closest('#open-add-bot');");
-        sb.AppendLine("  if (addBtn) { window.openSidebarLayer('add-bot-panel-layer'); return; }");
-        sb.AppendLine("  var llmBtn = e.target.closest('#open-llm-settings');");
-        sb.AppendLine("  if (llmBtn) { window.openSidebarLayer('llm-panel-layer'); return; }");
-        sb.AppendLine("  var closeBtn = e.target.closest('[data-close-layer]');");
-        sb.AppendLine("  if (closeBtn) { window.closeAllSidebarLayers(); return; }");
-        sb.AppendLine("  var openLayer = e.target.closest('.panel-layer.open');");
-        sb.AppendLine("  if (openLayer && e.target === openLayer) window.closeAllSidebarLayers();");
-        sb.AppendLine("});");
-        sb.AppendLine("document.addEventListener('keydown', function (e) { if (e.key === 'Escape') window.closeAllSidebarLayers(); });");
-        sb.AppendLine("document.body.addEventListener('htmx:afterRequest', function (e) {");
-        sb.AppendLine("  var path = (((e || {}).detail || {}).pathInfo || {}).requestPath || '';");
-        sb.AppendLine("  if (path === '/api/add-bot' || path === '/api/llm-select') window.closeAllSidebarLayers();");
-        sb.AppendLine("});");
-        sb.AppendLine("window.filterCatalogEntries = function (query) {");
-        sb.AppendLine("  var q = (query || '').toLowerCase().trim();");
-        sb.AppendLine("  document.querySelectorAll('#state-pane-catalog .catalog-entry').forEach(function (row) {");
-        sb.AppendLine("    var hay = row.getAttribute('data-search') || '';");
-        sb.AppendLine("    row.style.display = q === '' || hay.indexOf(q) >= 0 ? '' : 'none';");
-        sb.AppendLine("  });");
-        sb.AppendLine("};");
-        sb.AppendLine("window.ensureScriptEditor = function () {");
-        sb.AppendLine("  if (!window.CodeMirror) return;");
-        sb.AppendLine("  var input = document.getElementById('script-input');");
-        sb.AppendLine("  var liveInput = document.getElementById('current-script-input');");
-        sb.AppendLine("  if ((!input && !liveInput) || (window._scriptEditor && window._liveScriptEditor)) return;");
-        sb.Append("  var commands = [");
-        for (int i = 0; i < commandNames.Count; i++)
-        {
-            if (i > 0)
-                sb.Append(", ");
-            sb.Append("'").Append(Js(commandNames[i])).Append("'");
-        }
-        sb.AppendLine("];");
-        sb.AppendLine("  var controlKeywords = ['repeat', 'until', 'if', 'halt'];");
-        sb.AppendLine("  window.buildNameRegex = function (names, lineStartOnly) {");
-        sb.AppendLine("    if (!Array.isArray(names) || names.length === 0) return null;");
-        sb.AppendLine("    var escaped = names");
-        sb.AppendLine("      .filter(function (n) { return typeof n === 'string' && n.trim().length > 0; })");
-        sb.AppendLine("      .map(function (n) { return n.trim().replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&'); })");
-        sb.AppendLine("      .sort(function (a, b) { return b.length - a.length; });");
-        sb.AppendLine("    if (escaped.length === 0) return null;");
-        sb.AppendLine("    var core = '(?:' + escaped.join('|') + ')';");
-        sb.AppendLine("    var pattern = lineStartOnly ? core + '\\\\b' : '\\\\b' + core + '\\\\b';");
-        sb.AppendLine("    return new RegExp(pattern, 'i');");
-        sb.AppendLine("  };");
-        sb.AppendLine("  window._scriptCommandRegex = window.buildNameRegex(commands, true);");
-        sb.AppendLine("  window._scriptKeywordRegex = window.buildNameRegex(controlKeywords, true);");
-        sb.AppendLine("  window._scriptSystemRegex = null;");
-        sb.AppendLine("  window._scriptPoiRegex = null;");
-        sb.AppendLine("  window._scriptSymbolRegex = null;");
-        sb.AppendLine("  window.setScriptLocationSymbols = function (systemSymbols, poiSymbols) {");
-        sb.AppendLine("    window._scriptSystemRegex = window.buildNameRegex(systemSymbols || [], false);");
-        sb.AppendLine("    window._scriptPoiRegex = window.buildNameRegex(poiSymbols || [], false);");
-        sb.AppendLine("    if (window._scriptEditor) window._scriptEditor.refresh();");
-        sb.AppendLine("    if (window._liveScriptEditor) window._liveScriptEditor.refresh();");
-        sb.AppendLine("  };");
-        sb.AppendLine("  window.setScriptSymbols = function (nextSymbols) {");
-        sb.AppendLine("    window._scriptSymbolRegex = window.buildNameRegex(nextSymbols || [], false);");
-        sb.AppendLine("    if (window._scriptEditor) window._scriptEditor.refresh();");
-        sb.AppendLine("    if (window._liveScriptEditor) window._liveScriptEditor.refresh();");
-        sb.AppendLine("  };");
-        sb.AppendLine("  window.loadEditorBootstrap = function () {");
-        sb.AppendLine("    if (window._editorBootstrapLoaded) return;");
-        sb.AppendLine("    window._editorBootstrapLoaded = true;");
-        sb.AppendLine("    fetch('/bootstrap/editor-data', { cache: 'no-store' })");
-        sb.AppendLine("      .then(function (res) { return res.ok ? res.json() : null; })");
-        sb.AppendLine("      .then(function (data) {");
-        sb.AppendLine("        if (!data) return;");
-        sb.AppendLine("        if (Array.isArray(data.scriptHighlightNames)) window.setScriptSymbols(data.scriptHighlightNames);");
-        sb.AppendLine("        window.setScriptLocationSymbols(data.systemHighlightNames || [], data.poiHighlightNames || []);");
-        sb.AppendLine("        if (data.galaxyMap) window._galaxyMap = data.galaxyMap;");
-        sb.AppendLine("      })");
-        sb.AppendLine("      .catch(function () { });");
-        sb.AppendLine("  };");
-        sb.AppendLine("  if (!CodeMirror.modes.spacemolt) {");
-        sb.AppendLine("    CodeMirror.defineMode('spacemolt', function () {");
-        sb.AppendLine("      return {");
-        sb.AppendLine("        startState: function () { return { lineStart: true }; },");
-        sb.AppendLine("        token: function (stream, state) {");
-        sb.AppendLine("          if (stream.sol()) state.lineStart = true;");
-        sb.AppendLine("          if (stream.eatSpace()) return null;");
-        sb.AppendLine("          if (state.lineStart && window._scriptCommandRegex && stream.match(window._scriptCommandRegex, true, true)) {");
-        sb.AppendLine("            state.lineStart = false;");
-        sb.AppendLine("            return 'keyword';");
-        sb.AppendLine("          }");
-        sb.AppendLine("          if (state.lineStart && window._scriptKeywordRegex && stream.match(window._scriptKeywordRegex, true, true)) {");
-        sb.AppendLine("            state.lineStart = false;");
-        sb.AppendLine("            return 'keyword';");
-        sb.AppendLine("          }");
-        sb.AppendLine("          if (stream.peek() === ';') {");
-        sb.AppendLine("            stream.next();");
-        sb.AppendLine("            state.lineStart = false;");
-        sb.AppendLine("            return 'operator';");
-        sb.AppendLine("          }");
-        sb.AppendLine("          if (window._scriptSystemRegex && stream.match(window._scriptSystemRegex, true, true)) {");
-        sb.AppendLine("            state.lineStart = false;");
-        sb.AppendLine("            return 'variable-2';");
-        sb.AppendLine("          }");
-        sb.AppendLine("          if (window._scriptPoiRegex && stream.match(window._scriptPoiRegex, true, true)) {");
-        sb.AppendLine("            state.lineStart = false;");
-        sb.AppendLine("            return 'string-2';");
-        sb.AppendLine("          }");
-        sb.AppendLine("          if (window._scriptSymbolRegex && stream.match(window._scriptSymbolRegex, true, true)) {");
-        sb.AppendLine("            state.lineStart = false;");
-        sb.AppendLine("            return 'atom';");
-        sb.AppendLine("          }");
-        sb.AppendLine("          stream.next();");
-        sb.AppendLine("          state.lineStart = false;");
-        sb.AppendLine("          return null;");
-        sb.AppendLine("        }");
-        sb.AppendLine("      };");
-        sb.AppendLine("    });");
-        sb.AppendLine("  }");
-        sb.AppendLine("  if (input && !window._scriptEditor) {");
-        sb.AppendLine("    var editor = CodeMirror.fromTextArea(input, {");
-        sb.AppendLine("      mode: 'spacemolt',");
-        sb.AppendLine("      theme: 'material-darker',");
-        sb.AppendLine("      lineNumbers: true,");
-        sb.AppendLine("      indentUnit: 2,");
-        sb.AppendLine("      tabSize: 2,");
-        sb.AppendLine("      indentWithTabs: false");
-        sb.AppendLine("    });");
-        sb.AppendLine("    window._scriptEditor = editor;");
-        sb.AppendLine("    var form = document.getElementById('script-form');");
-        sb.AppendLine("    if (form) form.addEventListener('submit', function () { editor.save(); });");
-        sb.AppendLine("  }");
-        sb.AppendLine("  if (liveInput && !window._liveScriptEditor) {");
-        sb.AppendLine("    window._liveScriptEditor = CodeMirror.fromTextArea(liveInput, {");
-        sb.AppendLine("      mode: 'spacemolt',");
-        sb.AppendLine("      theme: 'material-darker',");
-        sb.AppendLine("      lineNumbers: true,");
-        sb.AppendLine("      readOnly: true");
-        sb.AppendLine("    });");
-        sb.AppendLine("    window._liveScriptRunLineHandle = null;");
-        sb.AppendLine("    window._liveScriptRunLineNumber = null;");
-        sb.AppendLine("  }");
-        sb.AppendLine("  window.setLiveScriptRunLine = function (lineNumber) {");
-        sb.AppendLine("    var editor = window._liveScriptEditor;");
-        sb.AppendLine("    if (!editor) return;");
-        sb.AppendLine("    var prev = window._liveScriptRunLineHandle;");
-        sb.AppendLine("    if (typeof prev === 'number' && prev >= 0 && prev < editor.lineCount()) {");
-        sb.AppendLine("      editor.removeLineClass(prev, 'background', 'run-line-active');");
-        sb.AppendLine("    }");
-        sb.AppendLine("    var next = (typeof lineNumber === 'number' && lineNumber > 0) ? Math.min(editor.lineCount() - 1, lineNumber - 1) : -1;");
-        sb.AppendLine("    if (next >= 0) {");
-        sb.AppendLine("      editor.addLineClass(next, 'background', 'run-line-active');");
-        sb.AppendLine("      window._liveScriptRunLineHandle = next;");
-        sb.AppendLine("    } else {");
-        sb.AppendLine("      window._liveScriptRunLineHandle = null;");
-        sb.AppendLine("    }");
-        sb.AppendLine("    window._liveScriptRunLineNumber = (typeof lineNumber === 'number') ? lineNumber : null;");
-        sb.AppendLine("  };");
-        sb.AppendLine("  window.syncCurrentScript = function () {");
-        sb.AppendLine("    fetch('/partial/current-script', { cache: 'no-store' })");
-        sb.AppendLine("      .then(function (res) { return res.ok ? res.json() : null; })");
-        sb.AppendLine("      .then(function (state) {");
-        sb.AppendLine("        if (!state || !window._liveScriptEditor) return;");
-        sb.AppendLine("        var text = typeof state.script === 'string' ? state.script : '';");
-        sb.AppendLine("        var current = window._liveScriptEditor.getValue();");
-        sb.AppendLine("        if (current !== text) window._liveScriptEditor.setValue(text);");
-        sb.AppendLine("        var nextLine = (typeof state.currentScriptLine === 'number') ? state.currentScriptLine : null;");
-        sb.AppendLine("        if (window._liveScriptRunLineNumber !== nextLine) window.setLiveScriptRunLine(nextLine);");
-        sb.AppendLine("      })");
-        sb.AppendLine("      .catch(function () { });");
-        sb.AppendLine("  };");
-        sb.AppendLine("  window.loadEditorBootstrap();");
-        sb.AppendLine("  window.syncCurrentScript();");
-        sb.AppendLine("  window.setLiveScriptRunLine(").Append(currentScriptLine?.ToString() ?? "null").AppendLine(");");
-        sb.AppendLine("  if (!window._liveScriptPoller) window._liveScriptPoller = setInterval(window.syncCurrentScript, 1000);");
-        sb.AppendLine("};");
-        sb.AppendLine("document.addEventListener('htmx:afterSwap', function () {");
-        sb.AppendLine("  window.ensureScriptEditor();");
-        sb.AppendLine("  if (window._scriptEditor) window._scriptEditor.refresh();");
-        sb.AppendLine("  if (window._liveScriptEditor) window._liveScriptEditor.refresh();");
-        sb.AppendLine("});");
-        sb.AppendLine("window.ensureScriptEditor();");
-        sb.AppendLine("</script>");
+        sb.AppendLine("<script src='/assets/ui.js'></script>");
         sb.AppendLine("</div></div></body></html>");
         return sb.ToString();
     }
@@ -788,11 +564,36 @@ public sealed class HtmxBotWindow : IAppUi
             case "catalog":
                 AppendCatalogHtml(sb, snapshot.CatalogStateMarkdown);
                 break;
+            case "map":
+                AppendMapHtml(sb);
+                break;
             default:
                 sb.Append("<pre>").Append(E(snapshot.SpaceStateMarkdown)).AppendLine("</pre>");
                 break;
         }
         return sb.ToString();
+    }
+
+    private void AppendMapHtml(StringBuilder sb)
+    {
+        var map = GalaxyStateHub.Snapshot().Map ?? new GalaxyMapSnapshot();
+        var systems = map.Systems ?? new List<GalaxySystemInfo>();
+        var mapJson = JsonSerializer.Serialize(map);
+        sb.AppendLine("<div class='map-wrap'>");
+        sb.Append("<div id='map-legend' class='map-legend'>Known systems: ")
+            .Append(systems.Count)
+            .AppendLine(" | Drag: pan | Wheel: zoom</div>");
+        sb.AppendLine("<div class='map-controls'><button type='button' class='map-reset-btn' data-map-canvas-id='state-map-canvas'>Reset View</button></div>");
+        sb.Append("<canvas id='state-map-canvas' class='galaxy-map-canvas' data-map='")
+            .Append(E(mapJson))
+            .AppendLine("'></canvas>");
+        sb.AppendLine("</div>");
+    }
+
+    private static string BuildMapDataJson()
+    {
+        var map = GalaxyStateHub.Snapshot().Map ?? new GalaxyMapSnapshot();
+        return JsonSerializer.Serialize(map);
     }
 
     private void AppendCatalogHtml(StringBuilder sb, string? catalogState)
@@ -969,6 +770,12 @@ public sealed class HtmxBotWindow : IAppUi
 
         return JsonSerializer.Serialize(new
         {
+            commandNames = CommandCatalog.All
+                .Select(c => c.Name)
+                .Where(n => !string.IsNullOrWhiteSpace(n))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(n => n, StringComparer.OrdinalIgnoreCase)
+                .ToList(),
             scriptHighlightNames = highlightNames,
             systemHighlightNames = systemNames,
             poiHighlightNames = poiNames.OrderBy(n => n, StringComparer.OrdinalIgnoreCase).ToList(),
@@ -1151,12 +958,16 @@ public sealed class HtmxBotWindow : IAppUi
         => Uri.UnescapeDataString((value ?? "").Replace("+", " "));
 
     private static string E(string value) => WebUtility.HtmlEncode(value ?? "");
-    private static string Js(string value)
-        => (value ?? string.Empty)
-            .Replace("\\", "\\\\", StringComparison.Ordinal)
-            .Replace("'", "\\'", StringComparison.Ordinal)
-            .Replace("\r", "\\r", StringComparison.Ordinal)
-            .Replace("\n", "\\n", StringComparison.Ordinal);
+
+    private static string ReadEmbeddedAsset(string fileName)
+    {
+        var assembly = typeof(HtmxBotWindow).Assembly;
+        var resourceName = $"{assembly.GetName().Name}.src.UI.Web.Assets.{fileName}";
+        using var stream = assembly.GetManifestResourceStream(resourceName)
+            ?? throw new InvalidOperationException($"Missing embedded asset: {resourceName}");
+        using var reader = new StreamReader(stream, Encoding.UTF8);
+        return reader.ReadToEnd();
+    }
 
     private static string EnsureTrailingSlash(string prefix)
         => string.IsNullOrWhiteSpace(prefix)

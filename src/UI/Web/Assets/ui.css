@@ -1,0 +1,54 @@
+html, body { height: 100%; }
+body { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; background:#0f1115; color:#d7dae0; margin:0; }
+.app { padding: 12px; height: 100vh; box-sizing: border-box; }
+.grid { display:grid; grid-template-columns: 280px 1fr 420px; gap:12px; align-items:stretch; height:100%; min-height:0; }
+.card { border:1px solid #2a2e38; background:#171a21; padding:10px; border-radius:8px; display:flex; flex-direction:column; min-height:0; }
+h3 { margin:0 0 8px 0; font-size:14px; color:#8eb8ff; }
+h4 { margin:10px 0 6px 0; font-size:12px; color:#8eb8ff; }
+pre { margin:0; white-space:pre-wrap; word-break:break-word; }
+textarea, select, input, button { width:100%; box-sizing:border-box; background:#0f1115; color:#d7dae0; border:1px solid #2a2e38; border-radius:6px; padding:6px; }
+button { cursor:pointer; }
+.row { display:flex; gap:8px; }
+.row > * { flex:1; }
+.small { font-size:12px; color:#9ca3b2; }
+.list { display:flex; flex-direction:column; gap:6px; }
+.active { border-color:#5ac977; }
+.sidebar { position:relative; overflow:hidden; }
+.sidebar-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:8px; }
+.sidebar-header h3 { margin:0; }
+.sidebar-actions { display:flex; gap:6px; }
+.sidebar-llm { display:flex; align-items:center; gap:6px; margin-bottom:8px; }
+.sidebar-llm-name { flex:1; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.icon-btn { width:auto; min-width:34px; padding:6px 10px; font-weight:700; line-height:1; }
+.panel-layer { position:absolute; inset:0; background:rgba(8,10,14,0.86); display:none; align-items:flex-start; justify-content:center; padding:10px; box-sizing:border-box; z-index:10; }
+.panel-layer.open { display:flex; }
+.panel-card { width:100%; max-height:100%; overflow-y:auto; border:1px solid #2a2e38; background:#171a21; border-radius:8px; padding:10px; box-sizing:border-box; }
+.panel-card-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:8px; gap:8px; }
+.panel-card-header h4 { margin:0; }
+.panel-card-close { width:auto; min-width:68px; }
+.tabs { display:flex; gap:6px; margin-bottom:8px; }
+.tab-btn { width:auto; flex:1; background:#0f1115; border:1px solid #2a2e38; color:#d7dae0; border-radius:6px; padding:6px 8px; font-size:12px; }
+.tab-btn.active { border-color:#5ac977; color:#e8ffef; }
+.tab-content { display:flex; flex:1; min-height:0; }
+.tab-pane { display:none; min-height:0; }
+.tab-pane.active { display:block; flex:1; min-height:0; overflow:auto; }
+.catalog-search { margin:0 0 8px 0; }
+details.catalog-group { margin-bottom:8px; border:1px solid #2a2e38; border-radius:6px; padding:6px; background:#11141a; }
+details.catalog-group > summary { cursor:pointer; color:#8eb8ff; }
+.catalog-list { display:flex; flex-direction:column; gap:4px; margin-top:6px; }
+.catalog-entry { white-space:pre-wrap; word-break:break-word; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.map-wrap { display:flex; flex-direction:column; gap:8px; height:100%; min-height:0; }
+.map-legend { font-size:12px; color:#9ca3b2; }
+.map-controls { display:flex; justify-content:flex-end; }
+.map-controls button { width:auto; min-width:92px; }
+.galaxy-map-canvas { width:100%; flex:1; min-height:480px; border:1px solid #2a2e38; border-radius:6px; background:#0b0f16; display:block; cursor:grab; }
+.galaxy-map-canvas.dragging { cursor:grabbing; }
+.CodeMirror { border:1px solid #2a2e38; border-radius:6px; height:190px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size:13px; }
+#live-script-editor .CodeMirror { height:140px; }
+.CodeMirror .run-line-active { background: rgba(90, 201, 119, 0.12); }
+.cm-s-material-darker .cm-atom { color:#ffd166; font-weight:600; }
+.cm-s-material-darker .cm-variable-2 { color:#79c0ff; font-weight:600; }
+.cm-s-material-darker .cm-string-2 { color:#ff9e64; font-weight:600; }
+.script-code { white-space:pre-wrap; word-break:break-word; }
+#state-panel { overflow:hidden; }
+#right-panel { overflow-y:auto; }
