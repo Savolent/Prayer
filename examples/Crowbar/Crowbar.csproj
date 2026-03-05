@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <NuGetAudit>false</NuGetAudit>
+    <NoWarn>$(NoWarn);NU1900</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="../../src/App/**/*.cs" />
+    <Compile Include="../../src/UI/**/*.cs" />
+    <Compile Include="../../src/Prayer.Shared/**/*.cs" />
+    <Compile Remove="../../src/Prayer.Shared/bin/**" />
+    <Compile Remove="../../src/Prayer.Shared/obj/**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../../src/Prayer.Contracts/Prayer.Contracts.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Spectre.Console" Version="0.54.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="../../src/UI/Web/Assets/*" />
+  </ItemGroup>
+
+</Project>

@@ -128,6 +128,80 @@ class Program
             GetActiveBotLoopEnabled,
             GetExecutionStatusLinesForBot,
             LogAuth);
+        var sessionPollers = new Dictionary<string, (CancellationTokenSource Cts, Task Task)>(StringComparer.Ordinal);
+
+        void StartSessionPoller(BotSession session)
+        {
+            if (string.IsNullOrWhiteSpace(session.PrayerSessionId))
+                return;
+
+            if (sessionPollers.ContainsKey(session.Id))
+                return;
+
+            var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cts.Token);
+            var pollTask = Task.Run(async () =>
+            {
+                long sinceVersion;
+                string prayerSessionId;
+                lock (botLock)
+                {
+                    sinceVersion = session.PrayerStateVersion;
+                    prayerSessionId = session.PrayerSessionId ?? "";
+                }
+
+                while (!linkedCts.Token.IsCancellationRequested)
+                {
+                    try
+                    {
+                        if (string.IsNullOrWhiteSpace(prayerSessionId))
+                            break;
+
+                        var pollResult = await prayerApi.GetRuntimeStateLongPollAsync(
+                            prayerSessionId,
+                            sinceVersion,
+                            waitMs: 1000,
+                            linkedCts.Token);
+
+                        if (!pollResult.Changed || pollResult.State == null)
+                            continue;
+
+                        sinceVersion = pollResult.StateVersion;
+
+                        bool isActive;
+                        lock (botLock)
+                        {
+                            if (botSessions.TryGetValue(session.Id, out var current))
+                            {
+                                current.PrayerStateVersion = pollResult.StateVersion;
+                                current.LastPrayerState = pollResult.State;
+                            }
+                            isActive = string.Equals(activeBotId, session.Id, StringComparison.Ordinal);
+                        }
+
+                        if (isActive)
+                            snapshotPublisher.PublishPrayerSnapshot(session, pollResult.State);
+                    }
+                    catch (OperationCanceledException) when (linkedCts.Token.IsCancellationRequested)
+                    {
+                        break;
+                    }
+                    catch (Exception ex)
+                    {
+                        LogAuth($"prayer_session_poll_failed | {session.Label} | {ex.GetType().Name}: {ex.Message}");
+                        try
+                        {
+                            await Task.Delay(500, linkedCts.Token);
+                        }
+                        catch (OperationCanceledException)
+                        {
+                            break;
+                        }
+                    }
+                }
+            }, linkedCts.Token);
+
+            sessionPollers[session.Id] = (linkedCts, pollTask);
+        }
 
         async Task<(BotSession Session, string Password)> CreateBotSessionAsync(
             string username,
@@ -232,6 +306,7 @@ class Program
                         if (activeBotId == null)
                             activeBotId = session.Id;
                     }
+                    StartSessionPoller(session);
                     snapshotPublisher.LogBotTabsIfChanged("startup_autologin_added");
                 }
                 catch (Exception ex)
@@ -317,6 +392,7 @@ class Program
                                 if (activeBotId == null)
                                     activeBotId = session.Id;
                             }
+                            StartSessionPoller(session);
                             snapshotPublisher.LogBotTabsIfChanged("manual_add_added");
                             try
                             {
@@ -412,7 +488,10 @@ class Program
                         }
 
                         channels.Status.Writer.TryWrite($"Switched to {switched.Label}");
-                        snapshotPublisher.PublishActiveSnapshot();
+                        if (switched.LastPrayerState != null)
+                            snapshotPublisher.PublishPrayerSnapshot(switched, switched.LastPrayerState);
+                        else
+                            snapshotPublisher.PublishActiveSnapshot();
                     }
 
                     while (channels.LoopUpdates.Reader.TryRead(out var update))
@@ -509,20 +588,6 @@ class Program
                         }
                     }
 
-                    var activePrayerBot = GetActiveBot();
-                    if (activePrayerBot?.PrayerSessionId != null)
-                    {
-                        try
-                        {
-                            var prayerSnapshot = await prayerApi.GetRuntimeStateAsync(activePrayerBot.PrayerSessionId);
-                            snapshotPublisher.PublishPrayerSnapshot(activePrayerBot, prayerSnapshot);
-                        }
-                        catch (Exception ex)
-                        {
-                            LogAuth($"prayer_ui_poll_failed | {activePrayerBot.Label} | {ex.GetType().Name}: {ex.Message}");
-                        }
-                    }
-
                     await Task.Delay(50, cts.Token);
                 }
             }
@@ -583,6 +648,9 @@ class Program
         ui.Run();
 
         cts.Cancel();
+        var pollerHandles = sessionPollers.Values.ToList();
+        foreach (var (pollerCts, _) in pollerHandles)
+            pollerCts.Cancel();
         channels.UiSnapshots.Writer.TryComplete();
 
         List<BotSession> sessionsToDispose;
@@ -608,7 +676,8 @@ class Program
 
         await Task.WhenAll(
             botTask.ContinueWith(_ => { }),
-            uiRenderTask.ContinueWith(_ => { })
+            uiRenderTask.ContinueWith(_ => { }),
+            Task.WhenAll(pollerHandles.Select(p => p.Task.ContinueWith(_ => { })))
         );
     }
 

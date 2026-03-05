@@ -1,8 +1,11 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
+using System.Linq;
 using System.Net.Http;
 using System.Net.Http.Json;
 using System.Text.Json;
+using System.Threading;
 using System.Threading.Tasks;
 using Prayer.Contracts;
 using Contracts = Prayer.Contracts;
@@ -81,30 +84,45 @@ public sealed class PrayerApiClient
 
     public async Task<AppPrayerRuntimeState> GetRuntimeStateAsync(string sessionId)
     {
-        var snapshot = await _http.GetFromJsonAsync<Contracts.RuntimeStateResponse>(
-            $"api/runtime/sessions/{sessionId}/state");
+        var result = await GetRuntimeStateLongPollAsync(
+            sessionId,
+            sinceVersion: 0,
+            waitMs: 0,
+            CancellationToken.None);
+        if (!result.Changed || result.State == null)
+            throw new InvalidOperationException("Prayer did not return a runtime state snapshot.");
+
+        return result.State;
+    }
+
+    public async Task<AppPrayerRuntimeStatePollResult> GetRuntimeStateLongPollAsync(
+        string sessionId,
+        long sinceVersion,
+        int waitMs,
+        CancellationToken cancellationToken)
+    {
+        var response = await _http.GetAsync(
+            $"api/runtime/sessions/{sessionId}/state?since={sinceVersion.ToString(CultureInfo.InvariantCulture)}&wait_ms={waitMs.ToString(CultureInfo.InvariantCulture)}",
+            cancellationToken);
+
+        if (response.StatusCode == System.Net.HttpStatusCode.NoContent)
+            return new AppPrayerRuntimeStatePollResult(null, sinceVersion, false);
+
+        await EnsureSuccessWithDetailsAsync(response);
+
+        long stateVersion = sinceVersion;
+        if (response.Headers.TryGetValues("X-Prayer-State-Version", out var values))
+        {
+            var raw = values.FirstOrDefault();
+            if (!string.IsNullOrWhiteSpace(raw))
+                _ = long.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out stateVersion);
+        }
+
+        var snapshot = await response.Content.ReadFromJsonAsync<Contracts.RuntimeStateResponse>(cancellationToken: cancellationToken);
         if (snapshot == null)
             throw new InvalidOperationException("Prayer did not return a runtime state snapshot.");
 
-        GameState? state = null;
-        if (snapshot.State.HasValue)
-        {
-            var stateElement = snapshot.State.Value;
-            if (stateElement.ValueKind != JsonValueKind.Null &&
-                stateElement.ValueKind != JsonValueKind.Undefined)
-            {
-                state = JsonSerializer.Deserialize<GameState>(stateElement.GetRawText());
-            }
-        }
-
-        return new AppPrayerRuntimeState(
-            state,
-            snapshot.Memory,
-            snapshot.ExecutionStatusLines,
-            snapshot.ControlInput,
-            snapshot.CurrentScriptLine,
-            snapshot.LastGenerationPrompt,
-            snapshot.LoopEnabled);
+        return new AppPrayerRuntimeStatePollResult(DeserializeState(snapshot), stateVersion, true);
     }
 
     public async Task DeleteSessionAsync(string sessionId)
@@ -177,6 +195,29 @@ public sealed class PrayerApiClient
             null,
             response.StatusCode);
     }
+
+    private static AppPrayerRuntimeState DeserializeState(Contracts.RuntimeStateResponse snapshot)
+    {
+        GameState? state = null;
+        if (snapshot.State.HasValue)
+        {
+            var stateElement = snapshot.State.Value;
+            if (stateElement.ValueKind != JsonValueKind.Null &&
+                stateElement.ValueKind != JsonValueKind.Undefined)
+            {
+                state = JsonSerializer.Deserialize<GameState>(stateElement.GetRawText());
+            }
+        }
+
+        return new AppPrayerRuntimeState(
+            state,
+            snapshot.Memory,
+            snapshot.ExecutionStatusLines,
+            snapshot.ControlInput,
+            snapshot.CurrentScriptLine,
+            snapshot.LastGenerationPrompt,
+            snapshot.LoopEnabled);
+    }
 }
 
 public sealed record AppPrayerRuntimeState(
@@ -187,3 +228,8 @@ public sealed record AppPrayerRuntimeState(
     int? CurrentScriptLine,
     string? LastGenerationPrompt,
     bool LoopEnabled);
+
+public sealed record AppPrayerRuntimeStatePollResult(
+    AppPrayerRuntimeState? State,
+    long StateVersion,
+    bool Changed);

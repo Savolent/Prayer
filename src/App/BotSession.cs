@@ -15,4 +15,6 @@ public sealed class BotSession
     public string? PrayerSessionId { get; set; }
     public bool LoopEnabled { get; set; }
     public List<string> ExecutionStatusLines { get; } = new();
+    public AppPrayerRuntimeState? LastPrayerState { get; set; }
+    public long PrayerStateVersion { get; set; }
 }

@@ -606,12 +606,12 @@ public sealed class HtmxBotWindow : IAppUi
 
     private void AppendMapHtml(StringBuilder sb)
     {
-        var map = GalaxyStateHub.Snapshot().Map ?? new GalaxyMapSnapshot();
-        var systems = map.Systems ?? new List<GalaxySystemInfo>();
+        var map = LoadGalaxyMapFromCache();
+        int systemsCount = map.Systems?.Count ?? 0;
         var mapJson = JsonSerializer.Serialize(map);
         sb.AppendLine("<div class='map-wrap'>");
         sb.Append("<div id='map-legend' class='map-legend'>Known systems: ")
-            .Append(systems.Count)
+            .Append(systemsCount)
             .AppendLine(" | Drag: pan | Wheel: zoom</div>");
         sb.AppendLine("<div class='map-controls'><button type='button' class='map-reset-btn' data-map-canvas-id='state-map-canvas'>Reset View</button></div>");
         sb.Append("<canvas id='state-map-canvas' class='galaxy-map-canvas' data-map='")
@@ -622,8 +622,28 @@ public sealed class HtmxBotWindow : IAppUi
 
     private static string BuildMapDataJson()
     {
-        var map = GalaxyStateHub.Snapshot().Map ?? new GalaxyMapSnapshot();
+        var map = LoadGalaxyMapFromCache();
         return JsonSerializer.Serialize(map);
+    }
+
+    private static GalaxyMapSnapshot LoadGalaxyMapFromCache()
+    {
+        try
+        {
+            if (File.Exists(AppPaths.GalaxyMapFile))
+            {
+                var raw = File.ReadAllText(AppPaths.GalaxyMapFile);
+                var parsed = JsonSerializer.Deserialize<GalaxyMapSnapshot>(raw);
+                if (parsed != null)
+                    return parsed;
+            }
+        }
+        catch
+        {
+            // Best-effort only.
+        }
+
+        return new GalaxyMapSnapshot();
     }
 
     private void AppendCatalogHtml(StringBuilder sb, string? catalogState)
@@ -767,49 +787,16 @@ public sealed class HtmxBotWindow : IAppUi
         var highlightNames = LoadScriptHighlightNamesFromCache()
             .OrderBy(n => n, StringComparer.OrdinalIgnoreCase)
             .ToList();
-        var galaxyMap = GalaxyMapSnapshotFile.LoadWithKnownPois(
-            AppPaths.GalaxyMapFile,
-            AppPaths.GalaxyKnownPoisFile);
-        var systemNames = galaxyMap.Systems
-            .Where(s => !string.IsNullOrWhiteSpace(s?.Id))
-            .Select(s => s.Id.Trim())
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .OrderBy(n => n, StringComparer.OrdinalIgnoreCase)
-            .ToList();
-        var poiNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var system in galaxyMap.Systems ?? new List<GalaxySystemInfo>())
-        {
-            foreach (var poi in system?.Pois ?? new List<GalaxyPoiInfo>())
-            {
-                var poiId = (poi?.Id ?? string.Empty).Trim();
-                if (poiId.Length > 0)
-                    poiNames.Add(poiId);
-            }
-        }
-
-        foreach (var poi in galaxyMap.KnownPois ?? new List<GalaxyKnownPoiInfo>())
-        {
-            var poiId = (poi?.Id ?? string.Empty).Trim();
-            if (poiId.Length > 0)
-                poiNames.Add(poiId);
-
-            var poiName = (poi?.Name ?? string.Empty).Trim();
-            if (poiName.Length > 0)
-                poiNames.Add(poiName);
-        }
+        var (systemNames, poiNames) = LoadMapNameHintsFromCache();
 
         return JsonSerializer.Serialize(new
         {
-            commandNames = CommandCatalog.All
-                .Select(c => c.Name)
-                .Where(n => !string.IsNullOrWhiteSpace(n))
-                .Distinct(StringComparer.OrdinalIgnoreCase)
+            commandNames = KnownCommandNames
                 .OrderBy(n => n, StringComparer.OrdinalIgnoreCase)
                 .ToList(),
             scriptHighlightNames = highlightNames,
             systemHighlightNames = systemNames,
-            poiHighlightNames = poiNames.OrderBy(n => n, StringComparer.OrdinalIgnoreCase).ToList(),
-            galaxyMap
+            poiHighlightNames = poiNames.OrderBy(n => n, StringComparer.OrdinalIgnoreCase).ToList()
         });
     }
 
@@ -824,18 +811,9 @@ public sealed class HtmxBotWindow : IAppUi
                 names.Add(trimmed);
         }
 
-        try
-        {
-            var map = GalaxyMapSnapshotFile.LoadWithKnownPois(
-                AppPaths.GalaxyMapFile,
-                AppPaths.GalaxyKnownPoisFile);
-            foreach (var system in map.Systems ?? new List<GalaxySystemInfo>())
-                AddName(system?.Id);
-        }
-        catch
-        {
-            // Keep startup resilient if cache parsing fails.
-        }
+        var (systemNames, _) = LoadMapNameHintsFromCache();
+        foreach (var system in systemNames)
+            AddName(system);
 
         AddCatalogueNamesFromCache(AppPaths.ItemCatalogByIdCacheFile, names);
         AddCatalogueNamesFromCache(AppPaths.ShipCatalogByIdCacheFile, names);
@@ -882,6 +860,82 @@ public sealed class HtmxBotWindow : IAppUi
         {
             // Ignore malformed cache files.
         }
+    }
+
+    private static readonly string[] KnownCommandNames =
+    {
+        "mine", "survey", "go", "accept_mission", "abandon_mission", "dock", "repair",
+        "sell", "buy", "cancel_buy", "cancel_sell", "withdraw_items", "deposit_items",
+        "switch_ship", "install_mod", "uninstall_mod", "buy_ship", "buy_listed_ship",
+        "commission_quote", "commission_ship", "commission_status", "sell_ship",
+        "list_ship_for_sale", "wait", "exit", "halt"
+    };
+
+    private static (List<string> Systems, HashSet<string> Pois) LoadMapNameHintsFromCache()
+    {
+        var systems = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var pois = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        try
+        {
+            if (File.Exists(AppPaths.GalaxyMapFile))
+            {
+                using var mapDoc = JsonDocument.Parse(File.ReadAllText(AppPaths.GalaxyMapFile));
+                if (mapDoc.RootElement.ValueKind == JsonValueKind.Object &&
+                    mapDoc.RootElement.TryGetProperty("Systems", out var systemsElement) &&
+                    systemsElement.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var system in systemsElement.EnumerateArray())
+                    {
+                        if (TryGetStringPropertyCaseInsensitive(system, "id", out var systemId))
+                            systems.Add(systemId.Trim());
+
+                        if (system.ValueKind == JsonValueKind.Object &&
+                            system.TryGetProperty("Pois", out var poisElement) &&
+                            poisElement.ValueKind == JsonValueKind.Array)
+                        {
+                            foreach (var poi in poisElement.EnumerateArray())
+                            {
+                                if (TryGetStringPropertyCaseInsensitive(poi, "id", out var poiId))
+                                    pois.Add(poiId.Trim());
+                                if (TryGetStringPropertyCaseInsensitive(poi, "name", out var poiName))
+                                    pois.Add(poiName.Trim());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        catch
+        {
+            // Best-effort only.
+        }
+
+        try
+        {
+            if (File.Exists(AppPaths.GalaxyKnownPoisFile))
+            {
+                using var knownDoc = JsonDocument.Parse(File.ReadAllText(AppPaths.GalaxyKnownPoisFile));
+                if (knownDoc.RootElement.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var poi in knownDoc.RootElement.EnumerateArray())
+                    {
+                        if (TryGetStringPropertyCaseInsensitive(poi, "id", out var poiId))
+                            pois.Add(poiId.Trim());
+                        if (TryGetStringPropertyCaseInsensitive(poi, "name", out var poiName))
+                            pois.Add(poiName.Trim());
+                        if (TryGetStringPropertyCaseInsensitive(poi, "systemId", out var systemId))
+                            systems.Add(systemId.Trim());
+                    }
+                }
+            }
+        }
+        catch
+        {
+            // Best-effort only.
+        }
+
+        return (systems.OrderBy(v => v, StringComparer.OrdinalIgnoreCase).ToList(), pois);
     }
 
     private static bool TryGetStringPropertyCaseInsensitive(

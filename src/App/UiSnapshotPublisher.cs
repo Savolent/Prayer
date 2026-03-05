@@ -5,7 +5,6 @@ using System.Threading.Channels;
 
 public sealed class UiSnapshotPublisher
 {
-    private readonly IAgentUiStateBuilder _uiStateBuilder = new AgentUiStateBuilder();
     private readonly ChannelWriter<UiSnapshot> _uiWriter;
     private readonly Func<IReadOnlyList<BotTab>> _getBotTabs;
     private readonly Func<string?> _getActiveBotId;
@@ -91,7 +90,7 @@ public sealed class UiSnapshotPublisher
 
         var tabs = _getBotTabs();
         var activeBotId = _getActiveBotId();
-        var uiState = _uiStateBuilder.BuildUiState(snapshot.State);
+        var uiState = AppUiStateBuilder.BuildUiState(snapshot.State);
         var missionPrompts = MissionPromptBuilder.BuildOptions(snapshot.State);
         LogBotTabsIfChanged("publish_prayer_snapshot", tabs, activeBotId);
         _uiWriter.TryWrite(new UiSnapshot(

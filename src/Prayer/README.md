@@ -1,30 +1,74 @@
-# Prayer Service
+# Prayer
 
-`Prayer` is the HTTP middle-tier runtime service.
-Its external DTO contracts live in `src/Prayer.Contracts`.
-Prayer now builds independently from `SpaceMoltLLM.csproj` and compiles required runtime/core/infra sources directly.
+Prayer is a platform backend for SpaceMolt clients.
 
-## Deployment model (current)
+## Story
 
-- Single trusted operator environment.
-- No authentication/authorization layer yet.
-- No tenant isolation guarantees; treat access to Prayer as trusted access.
+On the outer rim, a pilot stared up at a distant star while strapping into a haphazard cargo container bolted to a vectored thruster.  
+The seat was exposed to spray and vacuum grit, and every shudder from the engine sounded like a promise about to break.  
+He smacked the side of the container, glanced at the void, and muttered, "Well, it's just you, me, and a prayer."  
+Then he lit the thruster.
 
-## Run
+Instead of coupling gameplay automation into each UI, Prayer sits in the middle and exposes one runtime/control API:
+
+`Client (web/cli/agent)` -> `Prayer` -> `SpaceMolt`
+
+Natural language should turn into SpaceMolt gameplay smoothly and execution should still be explicit, inspectable, and controllable.
+
+## Core idea: natural language -> control language -> gameplay
+
+Prayer’s killer feature is the control language plus the agent that writes it.
+
+- A user expresses intent in natural language.
+- The agent turns that intent into control-language script.
+- Prayer executes script through deterministic runtime semantics.
+- Clients observe state/status and can halt, resume, or edit at any point.
+
+This keeps the UX conversational while avoiding black-box automation.
+
+## Why it matters
+
+Prayer is meant to be the shared control plane for many SpaceMolt clients, not just one app.
+
+- Build new clients without rewriting SpaceMolt session/runtime plumbing.
+- Keep planning/generation logic in one place.
+- Keep execution semantics and safety controls in one place.
+- Centralize telemetry and debugging.
+- Keep client apps focused on interface and workflow.
+
+If you are building dashboards, agent frontends, CLI tools, or custom automation clients, target Prayer and reuse the platform.
+
+## What Prayer currently owns
+
+- Runtime session lifecycle: `create`, `register`, `list`, `delete`
+- Script lifecycle: `set`, `generate`, `execute`, `halt`, `save-example`
+- Runtime state exposure: snapshot/status/state endpoints
+- LLM catalog and preference persistence
+- SpaceMolt transport, recovery handling, and instrumentation
+
+DTO/API contracts are defined in `src/Prayer.Contracts`.
+
+## Run and connect
+
+Start Prayer:
 
 ```bash
 dotnet run --project src/Prayer/Prayer.csproj
 ```
 
-## One-command local test run
+Start local stack (Prayer + app):
 
 ```bash
 ./scripts/dev-up.sh
 ```
 
-This starts Prayer, waits for `/health`, then starts the app with `PRAYER_BASE_URL` set.
+Client config:
 
-## Current scaffold endpoints
+- `PRAYER_BASE_URL` (default `http://localhost:5000/`)
+
+## API surface
+
+Service and preferences:
 
 - `GET /health`
 - `GET /api/llm/catalog`
@@ -32,12 +76,19 @@ This starts Prayer, waits for `/health`, then starts the app with `PRAYER_BASE_U
 - `PUT /api/preferences/bots`
 - `GET /api/preferences/llm`
 - `PUT /api/preferences/llm`
+
+Runtime sessions:
+
 - `GET /api/runtime/sessions`
 - `POST /api/runtime/sessions`
 - `POST /api/runtime/sessions/register`
 - `GET /api/runtime/sessions/{id}`
+- `DELETE /api/runtime/sessions/{id}`
 - `GET /api/runtime/sessions/{id}/llm`
 - `PUT /api/runtime/sessions/{id}/llm`
+
+Runtime execution and state:
+
 - `GET /api/runtime/sessions/{id}/snapshot`
 - `GET /api/runtime/sessions/{id}/status`
 - `GET /api/runtime/sessions/{id}/state`
@@ -49,17 +100,23 @@ This starts Prayer, waits for `/health`, then starts the app with `PRAYER_BASE_U
 - `PUT /api/runtime/sessions/{id}/loop`
 - `POST /api/runtime/sessions/{id}/commands`
 
-Current implementation executes real runtime sessions backed by:
+Observability:
 
-- `SpaceMoltHttpClient` login/session transport
-- `SpaceMoltAgent` + `RuntimeHost` worker loop
-- Runtime command queues (`set_script`, `generate_script`, `execute_script`, `halt`, `save_example`, `loop_on`, `loop_off`)
+- `GET /api/runtime/sessions/{id}/spacemolt/stats`
 
-The app now consumes Prayer as its runtime control plane (`PRAYER_BASE_URL` optional; defaults to `http://localhost:5000/`).
+`/state` also supports long polling via query params:
 
-## Create session request
+- `since=<version>`
+- `wait_ms=<timeout>`
 
-`POST /api/runtime/sessions`
+Recommended client pattern:
+
+- One long-poll worker per session
+- Separate command-dispatch path (don’t block commands on polling)
+
+## Request examples
+
+Create session:
 
 ```json
 {
@@ -69,9 +126,7 @@ The app now consumes Prayer as its runtime control plane (`PRAYER_BASE_URL` opti
 }
 ```
 
-## Register session request
-
-`POST /api/runtime/sessions/register`
+Register and create session:
 
 ```json
 {
@@ -81,3 +136,12 @@ The app now consumes Prayer as its runtime control plane (`PRAYER_BASE_URL` opti
   "label": "optional-session-label"
 }
 ```
+
+## Scope right now
+
+Prayer currently targets trusted internal/single-operator deployments.
+
+- No auth/authz layer yet
+- No tenant isolation yet
+
+That is intentional for the current phase: lock in the platform/runtime layer first, then harden for broader deployment.

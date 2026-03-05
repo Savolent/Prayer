@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Diagnostics.Metrics;
+using System.Globalization;
 using System.Text.Json;
 using System.Threading.Channels;
 using Contracts = Prayer.Contracts;
@@ -213,11 +214,28 @@ app.MapGet("/api/runtime/sessions/{id}/spacemolt/stats", (string id, RuntimeSess
     return Results.Ok(session.Client.GetApiStatsSnapshot());
 });
 
-app.MapGet("/api/runtime/sessions/{id}/state", (string id, RuntimeSessionStore store) =>
+app.MapGet("/api/runtime/sessions/{id}/state", async (string id, HttpContext http, RuntimeSessionStore store, CancellationToken cancellationToken) =>
 {
     if (!store.TryGet(id, out var session))
         return Results.NotFound();
 
+    long since = 0;
+    if (http.Request.Query.TryGetValue("since", out var sinceValues))
+        _ = long.TryParse(sinceValues.ToString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out since);
+
+    int waitMs = 0;
+    if (http.Request.Query.TryGetValue("wait_ms", out var waitValues))
+        _ = int.TryParse(waitValues.ToString(), NumberStyles.Integer, CultureInfo.InvariantCulture, out waitMs);
+
+    if (waitMs > 0)
+    {
+        waitMs = Math.Clamp(waitMs, 0, PrayerDefaults.MaxStateLongPollWaitMs);
+        bool changed = await session.WaitForStateChangeAsync(since, waitMs, cancellationToken);
+        if (!changed)
+            return Results.NoContent();
+    }
+
+    http.Response.Headers["X-Prayer-State-Version"] = session.StateVersion.ToString(CultureInfo.InvariantCulture);
     return Results.Ok(session.BuildRuntimeStateSnapshot());
 });
 
@@ -482,6 +500,8 @@ internal sealed class PrayerRuntimeSession : IDisposable
     private readonly object _stateLock = new();
     private readonly List<string> _executionStatus = new();
     private readonly ILogger<PrayerRuntimeSession> _logger;
+    private long _stateVersion = 1;
+    private TaskCompletionSource<long> _stateChanged = NewStateChangedSignal();
 
     public PrayerRuntimeSession(
         string id,
@@ -520,18 +540,10 @@ internal sealed class PrayerRuntimeSession : IDisposable
             HaltNowQueue.Reader,
             () => LoopEnabled,
             () => LatestState,
-            state =>
-            {
-                LatestState = state;
-                LastUpdatedUtc = DateTime.UtcNow;
-            },
+            UpdateLatestState,
             () => LastHaltedSnapshotAt,
             value => LastHaltedSnapshotAt = value,
-            state =>
-            {
-                LatestState = state;
-                LastUpdatedUtc = DateTime.UtcNow;
-            },
+            UpdateLatestState,
             AppendStatus,
             _ => { },
             reason =>
@@ -589,6 +601,7 @@ internal sealed class PrayerRuntimeSession : IDisposable
     public bool LoopEnabled { get; private set; }
     public GameState? LatestState { get; private set; }
     public DateTime LastHaltedSnapshotAt { get; private set; } = DateTime.MinValue;
+    public long StateVersion => Interlocked.Read(ref _stateVersion);
 
     public Channel<string> ControlInputQueue { get; } = Channel.CreateUnbounded<string>();
     public Channel<string> GenerateScriptQueue { get; } = Channel.CreateUnbounded<string>();
@@ -617,6 +630,30 @@ internal sealed class PrayerRuntimeSession : IDisposable
             Agent.CurrentScriptLine,
             Agent.LastScriptGenerationPrompt,
             LoopEnabled);
+    }
+
+    public async Task<bool> WaitForStateChangeAsync(long sinceVersion, int waitMs, CancellationToken cancellationToken)
+    {
+        if (StateVersion > sinceVersion)
+            return true;
+
+        var signal = Volatile.Read(ref _stateChanged);
+        if (StateVersion > sinceVersion)
+            return true;
+
+        using var waitCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        waitCts.CancelAfter(waitMs);
+
+        try
+        {
+            await signal.Task.WaitAsync(waitCts.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            // Timeout/cancel path.
+        }
+
+        return StateVersion > sinceVersion;
     }
 
     public bool TryApplyCommand(Contracts.RuntimeCommandRequest request, out string message)
@@ -796,12 +833,31 @@ internal sealed class PrayerRuntimeSession : IDisposable
                 _executionStatus.RemoveAt(0);
         }
 
+        MarkStateChanged();
+    }
+
+    private void UpdateLatestState(GameState state)
+    {
+        LatestState = state;
+        MarkStateChanged();
+    }
+
+    private void MarkStateChanged()
+    {
         LastUpdatedUtc = DateTime.UtcNow;
+        var nextVersion = Interlocked.Increment(ref _stateVersion);
+        var previous = Interlocked.Exchange(ref _stateChanged, NewStateChangedSignal());
+        previous.TrySetResult(nextVersion);
     }
 
     private static string Normalize(string? command)
     {
         return (command ?? string.Empty).Trim().ToLowerInvariant();
+    }
+
+    private static TaskCompletionSource<long> NewStateChangedSignal()
+    {
+        return new TaskCompletionSource<long>(TaskCreationOptions.RunContinuationsAsynchronously);
     }
 }
 
@@ -810,6 +866,7 @@ internal static class PrayerDefaults
     public const int ScriptGenerationMaxAttempts = 3;
     public const int ExecutionStatusHistoryLimit = 200;
     public const double SlowRequestThresholdMs = 500;
+    public const int MaxStateLongPollWaitMs = 30000;
 }
 
 internal static class PrayerRuntimeCommandNames
