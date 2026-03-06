@@ -1,5 +1,26 @@
 using System.Collections.Generic;
 
+public sealed record SpaceUiPoi(
+    string Target,
+    string Label);
+
+public sealed record SpaceUiCargoItem(
+    string ItemId,
+    int Quantity,
+    decimal? MedianPrice);
+
+public sealed record SpaceUiModel(
+    string System,
+    string Poi,
+    string Docked,
+    int Credits,
+    string Fuel,
+    string Hull,
+    string Shield,
+    string Cargo,
+    IReadOnlyList<SpaceUiPoi> Pois,
+    IReadOnlyList<SpaceUiCargoItem> CargoItems);
+
 public sealed record TradeUiItem(
     string ItemId,
     int Quantity,

@@ -6,12 +6,23 @@ using System.Text;
 
 internal static class SpaceTabRenderer
 {
-    public static string BuildStateStrip(string spaceStateMarkdown)
+    public static string BuildStateStrip(SpaceUiModel? model)
     {
-        var vm = Parse(spaceStateMarkdown);
+        var vm = model ?? new SpaceUiModel(
+            System: string.Empty,
+            Poi: string.Empty,
+            Docked: string.Empty,
+            Credits: 0,
+            Fuel: string.Empty,
+            Hull: string.Empty,
+            Shield: string.Empty,
+            Cargo: string.Empty,
+            Pois: Array.Empty<SpaceUiPoi>(),
+            CargoItems: Array.Empty<SpaceUiCargoItem>());
+
         var sb = new StringBuilder();
         sb.AppendLine("<div class='space-stats state-strip'>");
-        AppendStatCard(sb, "Credits", vm.Credits);
+        AppendStatCard(sb, "Credits", vm.Credits.ToString());
         AppendBarStatCard(sb, "Fuel", vm.Fuel);
         AppendBarStatCard(sb, "Hull", vm.Hull);
         AppendBarStatCard(sb, "Shield", vm.Shield);
@@ -20,9 +31,20 @@ internal static class SpaceTabRenderer
         return sb.ToString();
     }
 
-    public static string Build(string spaceStateMarkdown, IReadOnlyList<string> connectedSystems)
+    public static string Build(SpaceUiModel? model, IReadOnlyList<string> connectedSystems)
     {
-        var vm = Parse(spaceStateMarkdown);
+        var vm = model ?? new SpaceUiModel(
+            System: string.Empty,
+            Poi: string.Empty,
+            Docked: string.Empty,
+            Credits: 0,
+            Fuel: string.Empty,
+            Hull: string.Empty,
+            Shield: string.Empty,
+            Cargo: string.Empty,
+            Pois: Array.Empty<SpaceUiPoi>(),
+            CargoItems: Array.Empty<SpaceUiCargoItem>());
+
         var systems = (connectedSystems ?? Array.Empty<string>())
             .Where(s => !string.IsNullOrWhiteSpace(s))
             .Where(s => !string.Equals(s, vm.System, StringComparison.OrdinalIgnoreCase))
@@ -33,9 +55,9 @@ internal static class SpaceTabRenderer
         var sb = new StringBuilder();
         sb.AppendLine("<section class='space-page'>");
         sb.AppendLine("<div class='space-header'>");
-        sb.Append("<h4 class='space-title'>").Append(E(vm.SystemOrFallback)).AppendLine("</h4>");
-        sb.Append("<div class='space-subtitle'>POI ").Append(E(vm.PoiOrFallback))
-            .Append(" • ").Append(E(vm.DockedOrFallback)).AppendLine("</div>");
+        sb.Append("<h4 class='space-title'>").Append(E(SystemOrFallback(vm.System))).AppendLine("</h4>");
+        sb.Append("<div class='space-subtitle'>POI ").Append(E(PoiOrFallback(vm.Poi)))
+            .Append(" • ").Append(E(DockedOrFallback(vm.Docked))).AppendLine("</div>");
         sb.AppendLine("</div>");
 
         sb.AppendLine("<div class='space-grid'>");
@@ -68,11 +90,7 @@ internal static class SpaceTabRenderer
 
         sb.AppendLine("<section class='space-panel'>");
         sb.AppendLine("<div class='space-panel-title'>Cargo Items</div>");
-        if (vm.CargoItems.Count == 0)
-        {
-            sb.AppendLine("<div class='small'>(empty)</div>");
-        }
-        else
+        if (vm.CargoItems.Count > 0)
         {
             AppendCargoList(sb, vm.CargoItems);
             AppendCargoAllActions(sb);
@@ -149,33 +167,24 @@ internal static class SpaceTabRenderer
             .AppendLine("</button></form>");
     }
 
-    private static void AppendList(StringBuilder sb, IReadOnlyList<string> lines)
-    {
-        sb.AppendLine("<ul class='space-list'>");
-        foreach (var line in lines)
-            sb.Append("<li>").Append(E(line)).AppendLine("</li>");
-        sb.AppendLine("</ul>");
-    }
-
-    private static void AppendCargoList(StringBuilder sb, IReadOnlyList<string> lines)
+    private static void AppendCargoList(StringBuilder sb, IReadOnlyList<SpaceUiCargoItem> items)
     {
         sb.AppendLine("<div class='cargo-list'>");
-        foreach (var line in lines)
+        foreach (var item in items)
         {
-            var parsed = ParseCargoLine(line);
+            var itemId = item.ItemId ?? string.Empty;
             sb.AppendLine("<div class='cargo-row'>");
             sb.Append("<div class='cargo-item-main'><div class='cargo-label'>")
-                .Append(E(parsed.Label))
+                .Append(E($"{itemId} x{item.Quantity}"))
                 .AppendLine("</div>");
-            if (!string.IsNullOrWhiteSpace(parsed.PriceText))
+            if (item.MedianPrice.HasValue && item.MedianPrice.Value > 0m)
             {
                 sb.Append("<div class='cargo-meta'><span class='trade-order-price'>")
-                    .Append(E(parsed.PriceText!))
+                    .Append(E($"{item.MedianPrice.Value:0.##}cr"))
                     .AppendLine("</span></div>");
             }
             sb.AppendLine("</div>");
 
-            var itemId = parsed.ItemId;
             if (!string.IsNullOrWhiteSpace(itemId))
             {
                 sb.Append("<div class='cargo-actions'>");
@@ -205,151 +214,14 @@ internal static class SpaceTabRenderer
             .AppendLine("</button></form>");
     }
 
-    private static (string ItemId, string Label, string? PriceText) ParseCargoLine(string line)
-    {
-        var value = (line ?? string.Empty).Trim();
-        if (value.Length == 0)
-            return (string.Empty, string.Empty, null);
+    private static string SystemOrFallback(string system)
+        => string.IsNullOrWhiteSpace(system) ? "(unknown system)" : system;
 
-        var parts = value.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-        if (parts.Length >= 2 &&
-            parts[1].Length > 1 &&
-            parts[1][0] == 'x' &&
-            parts[1][1..].All(char.IsDigit))
-        {
-            var itemId = parts[0].Trim();
-            var label = $"{itemId} {parts[1]}";
-            var price = parts.Length >= 3 && parts[2].EndsWith("cr", StringComparison.OrdinalIgnoreCase)
-                ? parts[2]
-                : null;
-            return (itemId, label, price);
-        }
+    private static string PoiOrFallback(string poi)
+        => string.IsNullOrWhiteSpace(poi) ? "(unknown poi)" : poi;
 
-        var token = value.Split(' ', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? string.Empty;
-        return (token.Trim(), value, null);
-    }
-
-    private static SpaceViewModel Parse(string markdown)
-    {
-        var vm = new SpaceViewModel();
-        var lines = (markdown ?? string.Empty).Replace("\r\n", "\n").Split('\n');
-
-        bool inPois = false;
-        bool inCargo = false;
-        foreach (var raw in lines)
-        {
-            var line = raw.Trim();
-            if (line.Length == 0)
-                continue;
-
-            if (line.StartsWith("SYSTEM:", StringComparison.OrdinalIgnoreCase))
-            {
-                vm.System = line["SYSTEM:".Length..].Trim();
-                continue;
-            }
-
-            if (line.StartsWith("POI:", StringComparison.OrdinalIgnoreCase))
-            {
-                vm.Poi = line["POI:".Length..].Trim();
-                continue;
-            }
-
-            if (line.StartsWith("DOCKED:", StringComparison.OrdinalIgnoreCase))
-            {
-                vm.Docked = line["DOCKED:".Length..].Trim();
-                continue;
-            }
-
-            if (line.StartsWith("CREDITS:", StringComparison.OrdinalIgnoreCase))
-            {
-                vm.Credits = line["CREDITS:".Length..].Trim();
-                continue;
-            }
-
-            if (line.StartsWith("FUEL:", StringComparison.OrdinalIgnoreCase))
-            {
-                vm.Fuel = line["FUEL:".Length..].Trim();
-                continue;
-            }
-
-            if (line.StartsWith("HULL:", StringComparison.OrdinalIgnoreCase))
-            {
-                vm.Hull = line["HULL:".Length..].Trim();
-                continue;
-            }
-
-            if (line.StartsWith("SHIELD:", StringComparison.OrdinalIgnoreCase))
-            {
-                vm.Shield = line["SHIELD:".Length..].Trim();
-                continue;
-            }
-
-            if (line.StartsWith("CARGO:", StringComparison.OrdinalIgnoreCase))
-            {
-                vm.Cargo = line["CARGO:".Length..].Trim();
-                continue;
-            }
-
-            if (line.Equals("POIS", StringComparison.OrdinalIgnoreCase))
-            {
-                inPois = true;
-                inCargo = false;
-                continue;
-            }
-
-            if (line.Equals("CARGO ITEMS", StringComparison.OrdinalIgnoreCase))
-            {
-                inPois = false;
-                inCargo = true;
-                continue;
-            }
-
-            if (!line.StartsWith("- ", StringComparison.Ordinal))
-                continue;
-
-            var item = line[2..].Trim();
-            if (item.Length == 0 || item.Equals("(none)", StringComparison.OrdinalIgnoreCase))
-                continue;
-
-            if (inPois)
-            {
-                var target = item;
-                int idx = item.IndexOf(" (", StringComparison.Ordinal);
-                if (idx > 0)
-                    target = item[..idx].Trim();
-
-                if (target.Length > 0 &&
-                    !vm.Pois.Any(p => string.Equals(p.Target, target, StringComparison.Ordinal)))
-                {
-                    vm.Pois.Add((target, item));
-                }
-            }
-            else if (inCargo)
-            {
-                vm.CargoItems.Add(item);
-            }
-        }
-
-        return vm;
-    }
-
-    private sealed class SpaceViewModel
-    {
-        public string System { get; set; } = "";
-        public string Poi { get; set; } = "";
-        public string Docked { get; set; } = "";
-        public string Credits { get; set; } = "";
-        public string Fuel { get; set; } = "";
-        public string Hull { get; set; } = "";
-        public string Shield { get; set; } = "";
-        public string Cargo { get; set; } = "";
-        public List<(string Target, string Label)> Pois { get; } = new();
-        public List<string> CargoItems { get; } = new();
-
-        public string SystemOrFallback => string.IsNullOrWhiteSpace(System) ? "(unknown system)" : System;
-        public string PoiOrFallback => string.IsNullOrWhiteSpace(Poi) ? "(unknown poi)" : Poi;
-        public string DockedOrFallback => string.IsNullOrWhiteSpace(Docked) ? "(dock state unknown)" : $"Docked: {Docked}";
-    }
+    private static string DockedOrFallback(string docked)
+        => string.IsNullOrWhiteSpace(docked) ? "(dock state unknown)" : $"Docked: {docked}";
 
     private static string E(string value) => WebUtility.HtmlEncode(value ?? "");
 }

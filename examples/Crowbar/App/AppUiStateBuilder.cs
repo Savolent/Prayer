@@ -6,6 +6,7 @@ public static class AppUiStateBuilder
 {
     public static (
         string SpaceStateMarkdown,
+        SpaceUiModel SpaceModel,
         string? TradeStateMarkdown,
         TradeUiModel? TradeModel,
         string? ShipyardStateMarkdown,
@@ -15,6 +16,7 @@ public static class AppUiStateBuilder
         BuildUiState(GameState state)
     {
         var space = BuildSpaceState(state);
+        var spaceModel = BuildSpaceModel(state);
         var trade = state.Docked ? BuildTradeState(state) : null;
         var tradeModel = state.Docked ? BuildTradeModel(state) : null;
         var shipyard = state.Docked && string.Equals(state.CurrentPOI?.Type, "station", StringComparison.Ordinal)
@@ -27,7 +29,7 @@ public static class AppUiStateBuilder
             ? BuildMissionsState(state)
             : null;
         var catalog = BuildCatalogModel(state);
-        return (space, trade, tradeModel, shipyard, shipyardModel, missions, catalog);
+        return (space, spaceModel, trade, tradeModel, shipyard, shipyardModel, missions, catalog);
     }
 
     private static string BuildSpaceState(GameState state)
@@ -53,6 +55,40 @@ POIS
 
 CARGO ITEMS
 {cargo}";
+    }
+
+    private static SpaceUiModel BuildSpaceModel(GameState state)
+    {
+        var pois = (state.POIs ?? Array.Empty<POIInfo>())
+            .Where(p => p != null && !string.IsNullOrWhiteSpace(p.Id))
+            .OrderBy(p => p.Id, StringComparer.OrdinalIgnoreCase)
+            .Select(p => new SpaceUiPoi(p.Id, $"{p.Id} ({p.Type})"))
+            .ToArray();
+
+        var cargoItems = (state.Ship.Cargo ?? new Dictionary<string, ItemStack>())
+            .Values
+            .OrderBy(v => v.ItemId, StringComparer.OrdinalIgnoreCase)
+            .Select(v =>
+            {
+                var itemId = v.ItemId ?? string.Empty;
+                return new SpaceUiCargoItem(
+                    itemId,
+                    Math.Max(0, v.Quantity),
+                    ResolveMedianBidPrice(state, itemId) ?? ResolveMedianAskPrice(state, itemId));
+            })
+            .ToArray();
+
+        return new SpaceUiModel(
+            state.System ?? string.Empty,
+            state.CurrentPOI?.Id ?? "(unknown)",
+            state.Docked ? "True" : "False",
+            state.Credits,
+            $"{state.Ship.Fuel}/{state.Ship.MaxFuel}",
+            $"{state.Ship.Hull}/{state.Ship.MaxHull}",
+            $"{state.Ship.Shield}/{state.Ship.MaxShield}",
+            $"{state.Ship.CargoUsed}/{state.Ship.CargoCapacity}",
+            pois,
+            cargoItems);
     }
 
     private static string BuildTradeState(GameState state)

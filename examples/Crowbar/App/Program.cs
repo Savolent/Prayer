@@ -589,6 +589,7 @@ class Program
 
                     ui.Render(
                         snapshot.SpaceStateMarkdown,
+                        snapshot.SpaceModel,
                         snapshot.SpaceConnectedSystems,
                         snapshot.TradeStateMarkdown,
                         snapshot.TradeModel,

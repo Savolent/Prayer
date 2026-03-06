@@ -34,6 +34,7 @@ public sealed partial class HtmxBotWindow : IAppUi
         new(StringComparer.OrdinalIgnoreCase);
     private UiSnapshot _snapshot = new(
         "No bot logged in. Use Add Bot below.",
+        null,
         Array.Empty<string>(),
         null,
         null,
@@ -125,6 +126,7 @@ public sealed partial class HtmxBotWindow : IAppUi
 
     public void Render(
         string spaceStateMarkdown,
+        SpaceUiModel? spaceModel,
         IReadOnlyList<string> spaceConnectedSystems,
         string? tradeStateMarkdown,
         TradeUiModel? tradeModel,
@@ -146,6 +148,7 @@ public sealed partial class HtmxBotWindow : IAppUi
         {
             _snapshot = new UiSnapshot(
                 spaceStateMarkdown,
+                spaceModel,
                 spaceConnectedSystems,
                 tradeStateMarkdown,
                 tradeModel,
@@ -591,7 +594,7 @@ public sealed partial class HtmxBotWindow : IAppUi
                 sb.Append(CatalogTabRenderer.Build(snapshot.CatalogModel));
                 break;
             default:
-                sb.Append(SpaceTabRenderer.Build(snapshot.SpaceStateMarkdown, snapshot.SpaceConnectedSystems));
+                sb.Append(SpaceTabRenderer.Build(snapshot.SpaceModel, snapshot.SpaceConnectedSystems));
                 break;
         }
         return sb.ToString();
@@ -601,7 +604,7 @@ public sealed partial class HtmxBotWindow : IAppUi
     {
         UiSnapshot snapshot;
         lock (_lock) snapshot = _snapshot;
-        return SpaceTabRenderer.BuildStateStrip(snapshot.SpaceStateMarkdown);
+        return SpaceTabRenderer.BuildStateStrip(snapshot.SpaceModel);
     }
 
     private string BuildRightPanelHtml()
