@@ -483,16 +483,63 @@
     }
   };
 
-  document.addEventListener('click', function (e) {
-    var btn = e.target.closest('.tab-btn');
-    if (!btn) return;
+  function activateStateTab(tabBtn, focusAfter) {
+    if (!tabBtn) return;
     var panel = document.getElementById('state-panel');
     if (!panel) return;
-    var tab = btn.getAttribute('data-tab');
-    panel.querySelectorAll('.tab-btn').forEach(function (b) { b.classList.toggle('active', b === btn); });
-    panel.querySelectorAll('.tab-pane').forEach(function (p) { p.classList.remove('active'); });
+
+    var tab = tabBtn.getAttribute('data-tab');
+    if (!tab) return;
+
+    panel.querySelectorAll("[role='tab']").forEach(function (b) {
+      var selected = (b === tabBtn);
+      b.setAttribute('aria-selected', selected ? 'true' : 'false');
+      b.setAttribute('tabindex', selected ? '0' : '-1');
+      b.classList.toggle('active', selected);
+    });
+
+    panel.querySelectorAll('.tab-pane').forEach(function (p) {
+      p.classList.remove('active');
+      p.setAttribute('hidden', '');
+    });
+
     var target = document.getElementById('state-pane-' + tab);
-    if (target) target.classList.add('active');
+    if (target) {
+      target.classList.add('active');
+      target.removeAttribute('hidden');
+    }
+
+    if (focusAfter) tabBtn.focus();
+  }
+
+  document.addEventListener('click', function (e) {
+    var btn = e.target.closest("[role='tab'].tab-btn");
+    if (!btn) return;
+    activateStateTab(btn, false);
+  });
+
+  document.addEventListener('keydown', function (e) {
+    var currentTab = e.target.closest("[role='tab'].tab-btn");
+    if (!currentTab) return;
+    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) return;
+
+    var tabList = currentTab.closest("[role='tablist']");
+    if (!tabList) return;
+
+    var tabs = Array.prototype.slice.call(tabList.querySelectorAll("[role='tab'].tab-btn"));
+    if (tabs.length === 0) return;
+
+    var index = tabs.indexOf(currentTab);
+    if (index < 0) return;
+
+    var nextIndex = index;
+    if (e.key === 'ArrowRight') nextIndex = (index + 1) % tabs.length;
+    else if (e.key === 'ArrowLeft') nextIndex = (index - 1 + tabs.length) % tabs.length;
+    else if (e.key === 'Home') nextIndex = 0;
+    else if (e.key === 'End') nextIndex = tabs.length - 1;
+
+    e.preventDefault();
+    activateStateTab(tabs[nextIndex], true);
   });
 
   document.addEventListener('click', function (e) {
