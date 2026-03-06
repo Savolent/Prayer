@@ -154,18 +154,18 @@ public sealed partial class HtmxBotWindow
 
     private void AppendScriptShellHtml(StringBuilder sb, string currentScript)
     {
-        sb.AppendLine("<div class='card'><h3>Script</h3>");
-        sb.AppendLine("<h4>Current Script</h4><div id='live-script-editor'><textarea id='current-script-input' rows='5' readonly>")
+        sb.AppendLine("<div class='card script-column'><h3 class='column-title'>Script</h3>");
+        sb.AppendLine("<section class='space-panel script-block'><div class='space-panel-title'>Current Script</div><div id='live-script-editor'><textarea id='current-script-input' rows='5' readonly>")
             .Append(E(currentScript))
-            .AppendLine("</textarea></div>");
-        sb.AppendLine("<h4>Script</h4>");
+            .AppendLine("</textarea></div></section>");
+        sb.AppendLine("<section class='space-panel script-block'><div class='space-panel-title'>Edit Script</div>");
         sb.AppendLine("<form id='script-form' hx-post='api/control-input' hx-swap='none' class='list'>");
         sb.Append("<textarea id='script-input' name='script' rows='7' placeholder='script'>").Append(E(currentScript)).AppendLine("</textarea>");
         sb.AppendLine("<button type='submit'>Set Script</button></form>");
         sb.AppendLine(
-            "<div class='row' style='margin-top:8px;'><form hx-post='api/execute' hx-swap='none'><button id='execute-btn' class='execute-btn' type='submit' title='Execute'>▶️</button></form><form hx-post='api/halt' hx-swap='none'><button type='submit' title='Halt'>⏹️</button></form><form hx-post='api/save-example' hx-swap='none'><button type='submit' title='Thumbs Up'>👍</button></form></div>");
-        sb.AppendLine("<h4>Prompt</h4><form id='prompt-form' hx-post='api/prompt' hx-swap='none' hx-on::after-request='window.handlePromptAfterRequest(event)' class='list'><textarea name='prompt' rows='4' placeholder='prompt for script generation'></textarea><button type='submit'>Generate Script</button></form>");
-        sb.AppendLine("<form id='prompt-missions-form' hx-post='api/prompt-active-missions' hx-swap='none' hx-on::after-request='window.handlePromptAfterRequest(event)'><button type='submit'>Generate From Active Mission Objectives</button></form>");
-        sb.AppendLine("<div id='right-panel' hx-get='partial/right' hx-trigger='load, every 1000ms' hx-swap='innerHTML'></div></div>");
+            "<div class='row script-actions'><form hx-post='api/execute' hx-swap='none'><button id='execute-btn' class='execute-btn' type='submit' title='Execute'>▶️</button></form><form hx-post='api/halt' hx-swap='none'><button type='submit' title='Halt'>⏹️</button></form><form hx-post='api/save-example' hx-swap='none'><button type='submit' title='Thumbs Up'>👍</button></form></div></section>");
+        sb.AppendLine("<section class='space-panel script-block'><div class='space-panel-title'>Prompt</div><form id='prompt-form' hx-post='api/prompt' hx-swap='none' hx-on::after-request='window.handlePromptAfterRequest(event)' class='list'><textarea name='prompt' rows='4' placeholder='prompt for script generation'></textarea><button type='submit'>Generate Script</button></form>");
+        sb.AppendLine("<form id='prompt-missions-form' hx-post='api/prompt-active-missions' hx-swap='none' hx-on::after-request='window.handlePromptAfterRequest(event)'><button type='submit'>Generate From Active Mission Objectives</button></form></section>");
+        sb.AppendLine("<div id='right-panel' class='space-page' hx-get='partial/right' hx-trigger='load, every 1000ms' hx-swap='innerHTML'></div></div>");
     }
 }

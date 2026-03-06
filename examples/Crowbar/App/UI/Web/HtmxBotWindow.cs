@@ -550,12 +550,12 @@ public sealed partial class HtmxBotWindow : IAppUi
         lock (_lock) snapshot = _snapshot;
 
         var sb = new StringBuilder();
-        sb.AppendLine("<div class='list'>");
+        sb.AppendLine("<div class='list bot-list'>");
         foreach (var bot in snapshot.Bots)
         {
             var activeClass = bot.Id == snapshot.ActiveBotId ? " active" : "";
             sb.Append("<form hx-post='api/switch-bot' hx-swap='none'><input type='hidden' name='bot_id' value='")
-                .Append(E(bot.Id)).Append("'><button class='").Append(activeClass).Append("' type='submit'>")
+                .Append(E(bot.Id)).Append("'><button class='bot-btn").Append(activeClass).Append("' type='submit'>")
                 .Append(E(bot.Label)).AppendLine("</button></form>");
         }
         if (snapshot.Bots.Count == 0)
@@ -666,15 +666,15 @@ public sealed partial class HtmxBotWindow : IAppUi
         UiSnapshot snapshot;
         lock (_lock) snapshot = _snapshot;
         var sb = new StringBuilder();
-        sb.AppendLine("<h4>Execution</h4><pre>");
+        sb.AppendLine("<section class='space-panel script-block'><div class='space-panel-title'>Execution</div><pre class='log-pre'>");
         foreach (var line in snapshot.ExecutionStatusLines)
             sb.Append(E(line)).AppendLine();
-        sb.AppendLine("</pre>");
+        sb.AppendLine("</pre></section>");
 
-        sb.AppendLine("<h4>Memory</h4><pre>");
+        sb.AppendLine("<section class='space-panel script-block'><div class='space-panel-title'>Memory</div><pre class='log-pre'>");
         foreach (var line in snapshot.Memory)
             sb.Append(E(line)).AppendLine();
-        sb.AppendLine("</pre>");
+        sb.AppendLine("</pre></section>");
         return sb.ToString();
     }
 
