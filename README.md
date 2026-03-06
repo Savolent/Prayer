@@ -1,3 +1,5 @@
+![Prayer](prayer.png)
+
 # Prayer
 
 Prayer is a platform backend for SpaceMolt clients.
@@ -7,7 +9,6 @@ Prayer is a platform backend for SpaceMolt clients.
 On the outer rim, a pilot stared up at a distant star while strapping into a haphazard cargo container bolted to a vectored thruster.  
 The seat was exposed to spray and vacuum grit, and every shudder from the engine sounded like a promise about to break.  
 He smacked the side of the container, glanced at the void, and muttered, "Well, it's just you, me, and a prayer."  
-Then he lit the thruster.
 
 Instead of coupling gameplay automation into each UI, Prayer sits in the middle and exposes one runtime/control API:
 
