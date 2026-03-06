@@ -499,6 +499,7 @@ internal sealed class PrayerRuntimeSession : IDisposable
     private readonly object _stateLock = new();
     private readonly List<string> _executionStatus = new();
     private readonly ILogger<PrayerRuntimeSession> _logger;
+    private string? _latestRequestedScript;
     private long _stateVersion = 1;
     private TaskCompletionSource<long> _stateChanged = NewStateChangedSignal();
 
@@ -726,6 +727,8 @@ internal sealed class PrayerRuntimeSession : IDisposable
                 else
                 {
                     RuntimeHost.RequestHaltNow();
+                    DrainPendingControlInputs();
+                    _latestRequestedScript = argument;
                     ControlInputQueue.Writer.TryWrite(argument);
                     AppendStatus($"[{Label}] Script update requested");
                     (success, responseMessage) = (true, "script queued");
@@ -738,12 +741,16 @@ internal sealed class PrayerRuntimeSession : IDisposable
                 break;
             case PrayerRuntimeCommandNames.ExecuteScript:
             {
-                var script = Agent.CurrentControlInput;
+                var script = !string.IsNullOrWhiteSpace(_latestRequestedScript)
+                    ? _latestRequestedScript
+                    : Agent.CurrentControlInput;
                 if (string.IsNullOrWhiteSpace(script))
                     (success, responseMessage) = (false, "no script loaded");
                 else
                 {
+                    HaltNowQueue.Writer.TryWrite(true);
                     RuntimeHost.RequestHaltNow();
+                    DrainPendingControlInputs();
                     ControlInputQueue.Writer.TryWrite(script);
                     AppendStatus($"[{Label}] Script restart requested");
                     (success, responseMessage) = (true, "script execution restarted");
@@ -818,6 +825,14 @@ internal sealed class PrayerRuntimeSession : IDisposable
         }
 
         MarkStateChanged();
+    }
+
+    private void DrainPendingControlInputs()
+    {
+        while (ControlInputQueue.Reader.TryRead(out _))
+        {
+            // Drop stale queued control inputs so the newest script wins.
+        }
     }
 
     private void UpdateLatestState(GameState state)

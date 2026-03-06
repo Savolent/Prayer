@@ -116,7 +116,33 @@
     var xhr = detail.xhr || null;
     if (!xhr) return;
     if (xhr.status < 200 || xhr.status >= 300) return;
+
+    var sourceForm = detail.elt || null;
+    if (sourceForm) {
+      var hiddenScript = sourceForm.querySelector("input[name='script']");
+      var nextScript = hiddenScript ? (hiddenScript.value || '') : '';
+      if (nextScript.length > 0) {
+        if (window._liveScriptEditor && window._liveScriptEditor.getValue() !== nextScript) {
+          window._liveScriptEditor.setValue(nextScript);
+        }
+        if (window._scriptEditor && window._scriptEditor.getValue() !== nextScript) {
+          window._scriptEditor.setValue(nextScript);
+        } else {
+          var scriptInput = document.getElementById('script-input');
+          if (scriptInput) scriptInput.value = nextScript;
+        }
+      }
+    }
+
+    // Mirror execute-form behavior so run-line highlighting never stays stale.
+    window._haltHighlightPending = false;
+    window._haltHighlightPendingUntil = 0;
+    window.setExecuteButtonRunning(true);
+    window.setLiveScriptRunLine(1);
     htmx.ajax('POST', apiUrl('api/execute'), { swap: 'none' });
+    // Force a quick refresh in addition to the 1s poll loop.
+    setTimeout(window.syncCurrentScript, 120);
+    setTimeout(window.syncCurrentScript, 450);
   };
 
   window.useMissionPrompt = function (promptText, missionId, returnPoi) {
