@@ -18,7 +18,7 @@ internal static class TradeTabRenderer
             .Append(" • Storage ")
             .Append(model.StorageItems.Count)
             .Append(" • Orders ")
-            .Append(model.OpenOrders.Count)
+            .Append(model.BuyOrders.Count + model.SellOrders.Count)
             .AppendLine("</div>");
         sb.AppendLine("</div>");
 
@@ -36,37 +36,68 @@ internal static class TradeTabRenderer
 
         sb.AppendLine("<section class='space-panel'>");
         sb.AppendLine("<div class='space-panel-title'>Open Orders</div>");
-        if (model.OpenOrders.Count == 0)
+        if (model.BuyOrders.Count == 0 && model.SellOrders.Count == 0)
         {
             sb.AppendLine("<div class='small'>(none)</div>");
         }
         else
         {
-            foreach (var order in model.OpenOrders)
-            {
-                var side = string.IsNullOrWhiteSpace(order.Side) ? "ORDER" : order.Side.ToUpperInvariant();
-                sb.Append("<div class='mission-item trade-order-card'><div class='mission-title'>")
-                    .Append(E($"{side} {order.ItemId}"))
-                    .AppendLine("</div>");
-                sb.Append("<div class='mission-body'>")
-                    .Append(E(order.DisplayText))
-                    .AppendLine("</div>");
-
-                if (!string.IsNullOrWhiteSpace(order.ItemId))
-                {
-                    sb.AppendLine("<div class='mission-actions'>");
-                    if (side == "BUY")
-                        AppendScriptChip(sb, $"cancel_buy {order.ItemId};", "Cancel Buy");
-                    else if (side == "SELL")
-                        AppendScriptChip(sb, $"cancel_sell {order.ItemId};", "Cancel Sell");
-                    sb.AppendLine("</div>");
-                }
-                sb.AppendLine("</div>");
-            }
+            AppendOrderList(sb, "Buy Orders", model.BuyOrders, "cancel_buy", "Cancel Buy", true);
+            AppendOrderList(sb, "Sell Orders", model.SellOrders, "cancel_sell", "Cancel Sell", false);
         }
         sb.AppendLine("</section>");
         sb.AppendLine("</section>");
         return sb.ToString();
+    }
+
+    private static void AppendOrderList(
+        StringBuilder sb,
+        string title,
+        System.Collections.Generic.IReadOnlyList<TradeUiOrder> orders,
+        string cancelCommand,
+        string cancelLabel,
+        bool open)
+    {
+        sb.Append("<details class='catalog-group'");
+        if (open)
+            sb.Append(" open");
+        sb.Append("><summary>")
+            .Append(E(title))
+            .Append(" (")
+            .Append(orders.Count)
+            .AppendLine(")</summary>");
+
+        if (orders.Count == 0)
+        {
+            sb.AppendLine("<div class='small'>(none)</div>");
+            sb.AppendLine("</details>");
+            return;
+        }
+
+        foreach (var order in orders)
+        {
+            var priceText = $"{order.PriceEach:0.##}cr";
+            var quantityText = $"x{order.Quantity}";
+            sb.Append("<div class='mission-item trade-order-card'><div class='mission-title'>")
+                .Append(E(order.ItemId))
+                .AppendLine("</div>");
+            sb.Append("<div class='mission-body trade-order-meta'>Limit <span class='trade-order-price'>")
+                .Append(E(priceText))
+                .Append("</span> <span class='trade-order-qty'>")
+                .Append(E(quantityText))
+                .AppendLine("</span></div>");
+
+            if (!string.IsNullOrWhiteSpace(order.ItemId))
+            {
+                sb.AppendLine("<div class='mission-actions'>");
+                AppendScriptChip(sb, $"{cancelCommand} {order.ItemId};", cancelLabel);
+                sb.AppendLine("</div>");
+            }
+
+            sb.AppendLine("</div>");
+        }
+
+        sb.AppendLine("</details>");
     }
 
     private static void AppendInventoryPanel(
@@ -89,9 +120,30 @@ internal static class TradeTabRenderer
             sb.AppendLine("<div class='cargo-list'>");
             foreach (var item in items)
             {
-                sb.Append("<div class='cargo-row'><div class='cargo-label'>")
-                    .Append(E(item.DisplayText))
+                sb.AppendLine("<div class='cargo-row'>");
+                sb.Append("<div class='cargo-item-main'><div class='cargo-label'>")
+                    .Append(E($"{item.ItemId} x{item.Quantity}"))
                     .AppendLine("</div>");
+                if (item.MedianBuyPrice.HasValue || item.MedianSellPrice.HasValue)
+                {
+                    sb.Append("<div class='cargo-meta'>Median ");
+                    if (item.MedianBuyPrice.HasValue)
+                    {
+                        sb.Append("bid <span class='trade-order-price'>")
+                            .Append(E($"{item.MedianBuyPrice.Value:0.##}cr"))
+                            .Append("</span>");
+                    }
+                    if (item.MedianBuyPrice.HasValue && item.MedianSellPrice.HasValue)
+                        sb.Append(" | ");
+                    if (item.MedianSellPrice.HasValue)
+                    {
+                        sb.Append("ask <span class='trade-order-price'>")
+                            .Append(E($"{item.MedianSellPrice.Value:0.##}cr"))
+                            .Append("</span>");
+                    }
+                    sb.AppendLine("</div>");
+                }
+                sb.AppendLine("</div>");
                 if (!string.IsNullOrWhiteSpace(item.ItemId))
                 {
                     sb.AppendLine("<div class='cargo-actions'>");

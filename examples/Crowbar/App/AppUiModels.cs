@@ -3,10 +3,12 @@ using System.Collections.Generic;
 public sealed record TradeUiItem(
     string ItemId,
     int Quantity,
+    decimal? MedianBuyPrice,
+    decimal? MedianSellPrice,
     string DisplayText);
 
 public sealed record TradeUiOrder(
-    string Side,
+    string OrderId,
     string ItemId,
     int Quantity,
     decimal PriceEach,
@@ -20,7 +22,20 @@ public sealed record TradeUiModel(
     string Cargo,
     IReadOnlyList<TradeUiItem> CargoItems,
     IReadOnlyList<TradeUiItem> StorageItems,
-    IReadOnlyList<TradeUiOrder> OpenOrders);
+    IReadOnlyList<TradeUiOrder> BuyOrders,
+    IReadOnlyList<TradeUiOrder> SellOrders);
+
+public sealed record CatalogUiEntry(
+    string Id,
+    string Name,
+    string Category,
+    int? Tier,
+    decimal? Price,
+    string DisplayText);
+
+public sealed record CatalogUiModel(
+    IReadOnlyList<CatalogUiEntry> Items,
+    IReadOnlyList<CatalogUiEntry> Ships);
 
 public sealed record ShipyardUiEntry(
     string Id,

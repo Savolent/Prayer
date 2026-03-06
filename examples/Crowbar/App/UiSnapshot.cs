@@ -8,7 +8,7 @@ public sealed record UiSnapshot(
     string? ShipyardStateMarkdown,
     ShipyardUiModel? ShipyardModel,
     string? MissionsStateMarkdown,
-    string? CatalogStateMarkdown,
+    CatalogUiModel? CatalogModel,
     IReadOnlyList<MissionPromptOption> ActiveMissionPrompts,
     IReadOnlyList<MissionPromptOption> AvailableMissionPrompts,
     IReadOnlyList<string> Memory,

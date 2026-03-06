@@ -11,7 +11,7 @@ public static class AppUiStateBuilder
         string? ShipyardStateMarkdown,
         ShipyardUiModel? ShipyardModel,
         string? MissionsStateMarkdown,
-        string? CatalogStateMarkdown)
+        CatalogUiModel? CatalogModel)
         BuildUiState(GameState state)
     {
         var space = BuildSpaceState(state);
@@ -26,7 +26,7 @@ public static class AppUiStateBuilder
         var missions = state.Docked && string.Equals(state.CurrentPOI?.Type, "station", StringComparison.Ordinal)
             ? BuildMissionsState(state)
             : null;
-        var catalog = BuildCatalogState(state);
+        var catalog = BuildCatalogModel(state);
         return (space, trade, tradeModel, shipyard, shipyardModel, missions, catalog);
     }
 
@@ -35,7 +35,7 @@ public static class AppUiStateBuilder
         var pois = (state.POIs ?? Array.Empty<POIInfo>())
             .Select(p => $"- {p.Id} ({p.Type})")
             .ToArray();
-        var cargo = FormatCargo(state.Ship.Cargo);
+        var cargo = FormatCargoForSpace(state, state.Ship.Cargo);
 
         return
 $@"CONTEXT: SPACE
@@ -82,42 +82,58 @@ OPEN ORDERS
         var cargoItems = (state.Ship.Cargo ?? new Dictionary<string, ItemStack>())
             .Values
             .OrderBy(v => v.ItemId, StringComparer.OrdinalIgnoreCase)
-            .Select(v => new TradeUiItem(
-                v.ItemId ?? string.Empty,
-                Math.Max(0, v.Quantity),
-                $"{v.ItemId} x{v.Quantity}"))
+            .Select(v =>
+            {
+                var itemId = v.ItemId ?? string.Empty;
+                return new TradeUiItem(
+                    itemId,
+                    Math.Max(0, v.Quantity),
+                    ResolveMedianBidPrice(state, itemId),
+                    ResolveMedianAskPrice(state, itemId),
+                    $"{itemId} x{v.Quantity}");
+            })
             .ToArray();
 
         var storageItems = (state.StorageItems ?? new Dictionary<string, ItemStack>())
             .Values
             .OrderBy(v => v.ItemId, StringComparer.OrdinalIgnoreCase)
-            .Select(v => new TradeUiItem(
-                v.ItemId ?? string.Empty,
-                Math.Max(0, v.Quantity),
-                $"{v.ItemId} x{v.Quantity}"))
+            .Select(v =>
+            {
+                var itemId = v.ItemId ?? string.Empty;
+                return new TradeUiItem(
+                    itemId,
+                    Math.Max(0, v.Quantity),
+                    ResolveMedianBidPrice(state, itemId),
+                    ResolveMedianAskPrice(state, itemId),
+                    $"{itemId} x{v.Quantity}");
+            })
             .ToArray();
 
-        var openOrders = new List<TradeUiOrder>();
-        foreach (var order in state.OwnBuyOrders ?? Array.Empty<OpenOrderInfo>())
-        {
-            var itemId = order.ItemId ?? string.Empty;
-            openOrders.Add(new TradeUiOrder(
-                "BUY",
-                itemId,
-                Math.Max(0, order.Quantity),
-                order.PriceEach,
-                $"BUY {itemId} qty={order.Quantity} price={order.PriceEach}"));
-        }
-        foreach (var order in state.OwnSellOrders ?? Array.Empty<OpenOrderInfo>())
-        {
-            var itemId = order.ItemId ?? string.Empty;
-            openOrders.Add(new TradeUiOrder(
-                "SELL",
-                itemId,
-                Math.Max(0, order.Quantity),
-                order.PriceEach,
-                $"SELL {itemId} qty={order.Quantity} price={order.PriceEach}"));
-        }
+        var buyOrders = (state.OwnBuyOrders ?? Array.Empty<OpenOrderInfo>())
+            .Select(order =>
+            {
+                var itemId = order.ItemId ?? string.Empty;
+                return new TradeUiOrder(
+                    order.OrderId ?? string.Empty,
+                    itemId,
+                    Math.Max(0, order.Quantity),
+                    order.PriceEach,
+                    $"BUY {itemId} qty={order.Quantity} price={order.PriceEach}");
+            })
+            .ToArray();
+
+        var sellOrders = (state.OwnSellOrders ?? Array.Empty<OpenOrderInfo>())
+            .Select(order =>
+            {
+                var itemId = order.ItemId ?? string.Empty;
+                return new TradeUiOrder(
+                    order.OrderId ?? string.Empty,
+                    itemId,
+                    Math.Max(0, order.Quantity),
+                    order.PriceEach,
+                    $"SELL {itemId} qty={order.Quantity} price={order.PriceEach}");
+            })
+            .ToArray();
 
         return new TradeUiModel(
             state.CurrentPOI?.Id ?? "(unknown)",
@@ -127,7 +143,8 @@ OPEN ORDERS
             $"{state.Ship.CargoUsed}/{state.Ship.CargoCapacity}",
             cargoItems,
             storageItems,
-            openOrders);
+            buyOrders,
+            sellOrders);
     }
 
     private static string BuildShipyardState(GameState state)
@@ -232,23 +249,37 @@ AVAILABLE MISSIONS
 {FormatMissions(state.AvailableMissions)}";
     }
 
-    private static string BuildCatalogState(GameState state)
+    private static CatalogUiModel BuildCatalogModel(GameState state)
     {
-        var items = state.Galaxy?.Catalog?.ItemsById?.Values
-            .Select(e => $"- {e.Id} ({e.Name})")
-            .OrderBy(v => v, StringComparer.OrdinalIgnoreCase)
-            .ToArray() ?? Array.Empty<string>();
-        var ships = state.Galaxy?.Catalog?.ShipsById?.Values
-            .Select(e => $"- {e.Id} ({e.Name})")
-            .OrderBy(v => v, StringComparer.OrdinalIgnoreCase)
-            .ToArray() ?? Array.Empty<string>();
+        var itemEntries = (state.Galaxy?.Catalog?.ItemsById?.Values ?? Enumerable.Empty<CatalogueEntry>())
+            .Where(e => e != null && !string.IsNullOrWhiteSpace(e.Id))
+            .OrderBy(e => string.IsNullOrWhiteSpace(e.Category) ? "Unknown" : e.Category, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(e => e.Tier ?? int.MaxValue)
+            .ThenBy(e => string.IsNullOrWhiteSpace(e.Name) ? e.Id : e.Name, StringComparer.OrdinalIgnoreCase)
+            .Select(e => new CatalogUiEntry(
+                e.Id,
+                string.IsNullOrWhiteSpace(e.Name) ? e.Id : e.Name,
+                string.IsNullOrWhiteSpace(e.Category) ? "Unknown" : e.Category,
+                e.Tier,
+                e.Price,
+                string.IsNullOrWhiteSpace(e.Name) ? e.Id : $"{e.Id} ({e.Name})"))
+            .ToArray();
 
-        return
-$@"ITEMS
-{(items.Length == 0 ? "- (none)" : string.Join("\n", items))}
+        var shipEntries = (state.Galaxy?.Catalog?.ShipsById?.Values ?? Enumerable.Empty<CatalogueEntry>())
+            .Where(e => e != null && !string.IsNullOrWhiteSpace(e.Id))
+            .OrderBy(e => string.IsNullOrWhiteSpace(e.Category) ? "Unknown" : e.Category, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(e => e.Tier ?? int.MaxValue)
+            .ThenBy(e => string.IsNullOrWhiteSpace(e.Name) ? e.Id : e.Name, StringComparer.OrdinalIgnoreCase)
+            .Select(e => new CatalogUiEntry(
+                e.Id,
+                string.IsNullOrWhiteSpace(e.Name) ? e.Id : e.Name,
+                string.IsNullOrWhiteSpace(e.Category) ? "Unknown" : e.Category,
+                e.Tier,
+                e.Price,
+                string.IsNullOrWhiteSpace(e.Name) ? e.Id : $"{e.Id} ({e.Name})"))
+            .ToArray();
 
-SHIPS
-{(ships.Length == 0 ? "- (none)" : string.Join("\n", ships))}";
+        return new CatalogUiModel(itemEntries, shipEntries);
     }
 
     private static string FormatCargo(Dictionary<string, ItemStack>? cargo)
@@ -261,6 +292,26 @@ SHIPS
             cargo.Values
                 .OrderBy(v => v.ItemId, StringComparer.OrdinalIgnoreCase)
                 .Select(v => $"- {v.ItemId} x{v.Quantity}"));
+    }
+
+    private static string FormatCargoForSpace(GameState state, Dictionary<string, ItemStack>? cargo)
+    {
+        if (cargo == null || cargo.Count == 0)
+            return "- (empty)";
+
+        return string.Join(
+            "\n",
+            cargo.Values
+                .OrderBy(v => v.ItemId, StringComparer.OrdinalIgnoreCase)
+                .Select(v =>
+                {
+                    var itemId = v.ItemId ?? string.Empty;
+                    var medianPrice = ResolveMedianBidPrice(state, itemId) ?? ResolveMedianAskPrice(state, itemId);
+                    var suffix = medianPrice.HasValue && medianPrice.Value > 0m
+                        ? $" {Math.Round(medianPrice.Value, 2):0.##}cr"
+                        : string.Empty;
+                    return $"- {itemId} x{v.Quantity}{suffix}";
+                }));
     }
 
     private static string FormatMissions(MissionInfo[]? missions)
@@ -339,5 +390,76 @@ SHIPS
         return string.IsNullOrWhiteSpace(token)
             ? "Unknown"
             : char.ToUpperInvariant(token[0]) + token[1..];
+    }
+
+    private static decimal? ResolveMedianBidPrice(GameState state, string itemId)
+    {
+        if (string.IsNullOrWhiteSpace(itemId))
+            return null;
+
+        if (state.CurrentMarket?.BuyOrders != null &&
+            state.CurrentMarket.BuyOrders.TryGetValue(itemId, out var localBids))
+        {
+            var localMedian = ComputeMedianPriceFromOrders(localBids);
+            if (localMedian.HasValue && localMedian.Value > 0m)
+                return localMedian.Value;
+        }
+
+        if (state.Galaxy?.Market?.GlobalMedianBuyPrices != null &&
+            state.Galaxy.Market.GlobalMedianBuyPrices.TryGetValue(itemId, out var globalMedian) &&
+            globalMedian > 0m)
+        {
+            return globalMedian;
+        }
+
+        return null;
+    }
+
+    private static decimal? ResolveMedianAskPrice(GameState state, string itemId)
+    {
+        if (string.IsNullOrWhiteSpace(itemId))
+            return null;
+
+        if (state.CurrentMarket?.SellOrders != null &&
+            state.CurrentMarket.SellOrders.TryGetValue(itemId, out var localAsks))
+        {
+            var localMedian = ComputeMedianPriceFromOrders(localAsks);
+            if (localMedian.HasValue && localMedian.Value > 0m)
+                return localMedian.Value;
+        }
+
+        if (state.Galaxy?.Market?.GlobalMedianSellPrices != null &&
+            state.Galaxy.Market.GlobalMedianSellPrices.TryGetValue(itemId, out var globalMedian) &&
+            globalMedian > 0m)
+        {
+            return globalMedian;
+        }
+
+        return null;
+    }
+
+    private static decimal? ComputeMedianPriceFromOrders(List<MarketOrder>? orders)
+    {
+        if (orders == null || orders.Count == 0)
+            return null;
+
+        var expanded = new List<decimal>();
+        foreach (var order in orders.Where(o => o.Quantity > 0 && o.PriceEach > 0))
+        {
+            for (int i = 0; i < order.Quantity; i++)
+                expanded.Add(order.PriceEach);
+        }
+
+        if (expanded.Count == 0)
+            return null;
+
+        expanded.Sort();
+        int n = expanded.Count;
+        int mid = n / 2;
+
+        if (n % 2 == 1)
+            return expanded[mid];
+
+        return (expanded[mid - 1] + expanded[mid]) / 2m;
     }
 }

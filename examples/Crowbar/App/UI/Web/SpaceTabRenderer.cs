@@ -162,10 +162,20 @@ internal static class SpaceTabRenderer
         sb.AppendLine("<div class='cargo-list'>");
         foreach (var line in lines)
         {
-            var itemId = TryExtractCargoItemId(line);
-            sb.Append("<div class='cargo-row'><div class='cargo-label'>")
-                .Append(E(line))
+            var parsed = ParseCargoLine(line);
+            sb.AppendLine("<div class='cargo-row'>");
+            sb.Append("<div class='cargo-item-main'><div class='cargo-label'>")
+                .Append(E(parsed.Label))
                 .AppendLine("</div>");
+            if (!string.IsNullOrWhiteSpace(parsed.PriceText))
+            {
+                sb.Append("<div class='cargo-meta'><span class='trade-order-price'>")
+                    .Append(E(parsed.PriceText!))
+                    .AppendLine("</span></div>");
+            }
+            sb.AppendLine("</div>");
+
+            var itemId = parsed.ItemId;
             if (!string.IsNullOrWhiteSpace(itemId))
             {
                 sb.Append("<div class='cargo-actions'>");
@@ -195,24 +205,28 @@ internal static class SpaceTabRenderer
             .AppendLine("</button></form>");
     }
 
-    private static string TryExtractCargoItemId(string line)
+    private static (string ItemId, string Label, string? PriceText) ParseCargoLine(string line)
     {
         var value = (line ?? string.Empty).Trim();
         if (value.Length == 0)
-            return string.Empty;
+            return (string.Empty, string.Empty, null);
 
-        int qtyMarker = value.LastIndexOf(" x", StringComparison.Ordinal);
-        if (qtyMarker > 0)
+        var parts = value.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length >= 2 &&
+            parts[1].Length > 1 &&
+            parts[1][0] == 'x' &&
+            parts[1][1..].All(char.IsDigit))
         {
-            var qtyText = value[(qtyMarker + 2)..].Trim();
-            if (qtyText.Length > 0 && qtyText.All(char.IsDigit))
-            {
-                return value[..qtyMarker].Trim();
-            }
+            var itemId = parts[0].Trim();
+            var label = $"{itemId} {parts[1]}";
+            var price = parts.Length >= 3 && parts[2].EndsWith("cr", StringComparison.OrdinalIgnoreCase)
+                ? parts[2]
+                : null;
+            return (itemId, label, price);
         }
 
         var token = value.Split(' ', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? string.Empty;
-        return token.Trim();
+        return (token.Trim(), value, null);
     }
 
     private static SpaceViewModel Parse(string markdown)

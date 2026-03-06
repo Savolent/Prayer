@@ -96,7 +96,9 @@ form[hx-post='api/execute'] button.run-active { border-color:#5ac977; background
 .space-list { margin:0; padding-left:16px; display:flex; flex-direction:column; gap:4px; }
 .cargo-list { display:flex; flex-direction:column; gap:6px; }
 .cargo-row { display:flex; align-items:center; justify-content:space-between; gap:8px; border:1px solid #263246; border-radius:8px; padding:6px 8px; background:#101824; }
+.cargo-item-main { min-width:0; display:flex; flex-direction:column; gap:2px; }
 .cargo-label { font-size:12px; color:#d9e6fa; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.cargo-meta { font-size:11px; color:#9fb1ca; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .cargo-actions { display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
 .cargo-actions .space-chip-form { margin:0; }
 .cargo-all-actions { display:flex; align-items:center; gap:8px; margin-top:8px; padding-top:8px; border-top:1px solid #263246; }
@@ -110,6 +112,9 @@ form[hx-post='api/execute'] button.run-active { border-color:#5ac977; background
 .trade-stats { margin-bottom: 2px; }
 .trade-order-card .mission-title { text-transform: uppercase; letter-spacing: 0.3px; }
 .trade-order-card .mission-body { margin-bottom: 0; }
+.trade-order-meta { display:flex; align-items:center; gap:6px; }
+.trade-order-price { color:#ffd67a; font-weight:700; }
+.trade-order-qty { color:#c9d8ef; }
 .shipyard-stats { margin-bottom: 2px; }
 .shipyard-card .mission-title { font-weight: 600; color: #dce8ff; }
 .shipyard-card .mission-actions { margin-top: 6px; }

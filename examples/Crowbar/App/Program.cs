@@ -595,7 +595,7 @@ class Program
                         snapshot.ShipyardStateMarkdown,
                         snapshot.ShipyardModel,
                         snapshot.MissionsStateMarkdown,
-                        snapshot.CatalogStateMarkdown,
+                        snapshot.CatalogModel,
                         snapshot.ActiveMissionPrompts,
                         snapshot.AvailableMissionPrompts,
                         snapshot.Memory,

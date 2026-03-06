@@ -131,7 +131,7 @@ public sealed partial class HtmxBotWindow : IAppUi
         string? shipyardStateMarkdown,
         ShipyardUiModel? shipyardModel,
         string? missionsStateMarkdown,
-        string? catalogStateMarkdown,
+        CatalogUiModel? catalogModel,
         IReadOnlyList<MissionPromptOption> activeMissionPrompts,
         IReadOnlyList<MissionPromptOption> availableMissionPrompts,
         IReadOnlyList<string> memory,
@@ -152,7 +152,7 @@ public sealed partial class HtmxBotWindow : IAppUi
                 shipyardStateMarkdown,
                 shipyardModel,
                 missionsStateMarkdown,
-                catalogStateMarkdown,
+                catalogModel,
                 activeMissionPrompts,
                 availableMissionPrompts,
                 memory,
@@ -588,7 +588,7 @@ public sealed partial class HtmxBotWindow : IAppUi
                 sb.Append(MissionsTabRenderer.Build(snapshot.MissionsStateMarkdown, snapshot.ActiveMissionPrompts, snapshot.AvailableMissionPrompts));
                 break;
             case "catalog":
-                AppendCatalogHtml(sb, snapshot.CatalogStateMarkdown);
+                sb.Append(CatalogTabRenderer.Build(snapshot.CatalogModel));
                 break;
             default:
                 sb.Append(SpaceTabRenderer.Build(snapshot.SpaceStateMarkdown, snapshot.SpaceConnectedSystems));
@@ -602,69 +602,6 @@ public sealed partial class HtmxBotWindow : IAppUi
         UiSnapshot snapshot;
         lock (_lock) snapshot = _snapshot;
         return SpaceTabRenderer.BuildStateStrip(snapshot.SpaceStateMarkdown);
-    }
-
-    private void AppendCatalogHtml(StringBuilder sb, string? catalogState)
-    {
-        var raw = catalogState ?? "(catalog unavailable)";
-        var lines = raw.Replace("\r\n", "\n").Split('\n');
-
-        int itemsIndex = Array.IndexOf(lines, "ITEMS");
-        int shipsIndex = Array.IndexOf(lines, "SHIPS");
-
-        if (itemsIndex < 0 || shipsIndex < 0 || shipsIndex <= itemsIndex)
-        {
-            sb.Append("<pre>").Append(E(raw)).AppendLine("</pre>");
-            return;
-        }
-
-        var itemsBody = string.Join("\n", lines.Skip(itemsIndex + 1).Take(shipsIndex - itemsIndex - 1)).Trim();
-        var shipsBody = string.Join("\n", lines.Skip(shipsIndex + 1)).Trim();
-        var itemLines = itemsBody.Length == 0
-            ? Array.Empty<string>()
-            : itemsBody.Split('\n').Select(l => l.Trim()).Where(l => l.Length > 0).ToArray();
-        var shipLines = shipsBody.Length == 0
-            ? Array.Empty<string>()
-            : shipsBody.Split('\n').Select(l => l.Trim()).Where(l => l.Length > 0).ToArray();
-
-        sb.AppendLine("<input class='catalog-search' type='search' placeholder='Search catalog...' oninput='window.filterCatalogEntries(this.value)'>");
-        sb.AppendLine($"<details class='catalog-group' open><summary>Items ({itemLines.Length})</summary>");
-        sb.AppendLine("<div class='catalog-list'>");
-        if (itemLines.Length == 0)
-        {
-            sb.AppendLine("<div class='catalog-entry' data-search=''>- (no item catalog entries)</div>");
-        }
-        else
-        {
-            foreach (var line in itemLines)
-            {
-                sb.Append("<div class='catalog-entry' data-search='")
-                    .Append(E(line.ToLowerInvariant()))
-                    .Append("'>")
-                    .Append(E(line))
-                    .AppendLine("</div>");
-            }
-        }
-        sb.AppendLine("</div></details>");
-
-        sb.AppendLine($"<details class='catalog-group'><summary>Ships ({shipLines.Length})</summary>");
-        sb.AppendLine("<div class='catalog-list'>");
-        if (shipLines.Length == 0)
-        {
-            sb.AppendLine("<div class='catalog-entry' data-search=''>- (no ship catalog entries)</div>");
-        }
-        else
-        {
-            foreach (var line in shipLines)
-            {
-                sb.Append("<div class='catalog-entry' data-search='")
-                    .Append(E(line.ToLowerInvariant()))
-                    .Append("'>")
-                    .Append(E(line))
-                    .AppendLine("</div>");
-            }
-        }
-        sb.AppendLine("</div></details>");
     }
 
     private string BuildRightPanelHtml()

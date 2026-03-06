@@ -20,7 +20,7 @@ public interface IAppUi
         string? shipyardStateMarkdown,
         ShipyardUiModel? shipyardModel,
         string? missionsStateMarkdown,
-        string? catalogStateMarkdown,
+        CatalogUiModel? catalogModel,
         IReadOnlyList<MissionPromptOption> activeMissionPrompts,
         IReadOnlyList<MissionPromptOption> availableMissionPrompts,
         IReadOnlyList<string> memory,

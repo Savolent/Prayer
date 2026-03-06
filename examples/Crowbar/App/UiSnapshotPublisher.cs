@@ -102,7 +102,7 @@ public sealed class UiSnapshotPublisher
             uiState.ShipyardStateMarkdown,
             uiState.ShipyardModel,
             uiState.MissionsStateMarkdown,
-            uiState.CatalogStateMarkdown,
+            uiState.CatalogModel,
             missionPrompts,
             availableMissionPrompts,
             snapshot.Memory,
