@@ -39,8 +39,8 @@ public abstract record DslAstNode;
 
 public sealed record DslCommandAstNode(string Name, IReadOnlyList<string> Args, int SourceLine = 0) : DslAstNode;
 public sealed record DslRepeatAstNode(IReadOnlyList<DslAstNode> Body, int SourceLine = 0) : DslAstNode;
-public sealed record DslIfAstNode(string Condition, IReadOnlyList<DslAstNode> Body, int SourceLine = 0) : DslAstNode;
-public sealed record DslUntilAstNode(string Condition, IReadOnlyList<DslAstNode> Body, int SourceLine = 0) : DslAstNode;
+public sealed record DslIfAstNode(DslConditionAstNode Condition, IReadOnlyList<DslAstNode> Body, int SourceLine = 0) : DslAstNode;
+public sealed record DslUntilAstNode(DslConditionAstNode Condition, IReadOnlyList<DslAstNode> Body, int SourceLine = 0) : DslAstNode;
 
 public static class DslParser
 {
@@ -136,7 +136,7 @@ public static class DslParser
         from body in Superpower.Parse.Ref(() => StatementAst!).Many()
         from ____ in Ws
         from _close in Character.EqualTo('}')
-        select (DslAstNode)new DslIfAstNode(condition, body);
+        select (DslAstNode)new DslIfAstNode(ParseConditionOrThrow(condition), body);
 
     private static readonly TextParser<DslAstNode> UntilAst =
         from _until in Span.EqualToIgnoreCase("until").Value(Unit.Value)
@@ -148,7 +148,7 @@ public static class DslParser
         from body in Superpower.Parse.Ref(() => StatementAst!).Many()
         from ____ in Ws
         from _close in Character.EqualTo('}')
-        select (DslAstNode)new DslUntilAstNode(condition, body);
+        select (DslAstNode)new DslUntilAstNode(ParseConditionOrThrow(condition), body);
 
     private static readonly TextParser<DslAstNode> StatementAst =
         from statement in UntilAst.Try().Or(IfAst.Try()).Or(RepeatAst.Try()).Or(CommandAst)
@@ -161,6 +161,18 @@ public static class DslParser
             from statement in StatementAst!
             select statement).Many()
         select new DslAstProgram(statements);
+
+    private static DslConditionAstNode ParseConditionOrThrow(string rawCondition)
+    {
+        if (DslBooleanEvaluator.TryParseCondition(rawCondition, out var condition, out var error) &&
+            condition != null)
+        {
+            return condition;
+        }
+
+        throw new FormatException(
+            $"Invalid condition '{rawCondition}': {error ?? "unknown error"}.");
+    }
 
     static DslParser()
     {
@@ -1015,7 +1027,7 @@ public static class DslParser
                     if (!DslBooleanEvaluator.TryValidateCondition(ifNode.Condition, out var error))
                     {
                         throw new FormatException(
-                            $"Invalid condition '{ifNode.Condition}': {error}.");
+                            $"Invalid condition '{DslBooleanEvaluator.RenderCondition(ifNode.Condition)}': {error}.");
                     }
 
                     ValidateNodes(ifNode.Body ?? Array.Empty<DslAstNode>());
@@ -1026,7 +1038,7 @@ public static class DslParser
                     if (!DslBooleanEvaluator.TryValidateCondition(untilNode.Condition, out var error))
                     {
                         throw new FormatException(
-                            $"Invalid condition '{untilNode.Condition}': {error}.");
+                            $"Invalid condition '{DslBooleanEvaluator.RenderCondition(untilNode.Condition)}': {error}.");
                     }
 
                     ValidateNodes(untilNode.Body ?? Array.Empty<DslAstNode>());

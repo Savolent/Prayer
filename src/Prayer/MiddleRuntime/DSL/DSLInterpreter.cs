@@ -124,7 +124,7 @@ public static class DslInterpreter
                 case DslIfAstNode ifNode:
                 {
                     string ifId = $"i{++nextIfId}";
-                    string condition = (ifNode.Condition ?? string.Empty).Trim().ToUpperInvariant();
+                    string condition = DslBooleanEvaluator.RenderCondition(ifNode.Condition);
                     output.Add(new CommandResult
                     {
                         Action = IfStartAction,
@@ -149,7 +149,7 @@ public static class DslInterpreter
                 case DslUntilAstNode untilNode:
                 {
                     string untilId = $"u{++nextUntilId}";
-                    string condition = (untilNode.Condition ?? string.Empty).Trim().ToUpperInvariant();
+                    string condition = DslBooleanEvaluator.RenderCondition(untilNode.Condition);
                     output.Add(new CommandResult
                     {
                         Action = UntilStartAction,

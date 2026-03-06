@@ -435,7 +435,7 @@ public sealed class CommandExecutionEngine
                         out conditionValue);
                     LogAstWalker(
                         "if_visit",
-                        $"Visited if line={ifNode.SourceLine} cond={NormalizeCondition(ifNode.Condition)} known={conditionKnown} value={conditionValue} enter={shouldEnter} bodyCount={body.Count} path={frame.Path}/{nodeIndex}.");
+                        $"Visited if line={ifNode.SourceLine} cond={DslBooleanEvaluator.RenderCondition(ifNode.Condition)} known={conditionKnown} value={conditionValue} enter={shouldEnter} bodyCount={body.Count} path={frame.Path}/{nodeIndex}.");
                     if (shouldEnter && body.Count > 0)
                     {
                         _frames.Add(new ExecutionFrame(
@@ -464,14 +464,14 @@ public sealed class CommandExecutionEngine
                     IReadOnlyList<DslAstNode> body = untilNode.Body ?? Array.Empty<DslAstNode>();
                     LogAstWalker(
                         "until_visit",
-                        $"Visited until line={untilNode.SourceLine} cond={NormalizeCondition(untilNode.Condition)} known={conditionKnown} value={conditionValue} enter={shouldEnter} bodyCount={body.Count} path={frame.Path}/{nodeIndex}.");
+                        $"Visited until line={untilNode.SourceLine} cond={DslBooleanEvaluator.RenderCondition(untilNode.Condition)} known={conditionKnown} value={conditionValue} enter={shouldEnter} bodyCount={body.Count} path={frame.Path}/{nodeIndex}.");
                     if (shouldEnter && body.Count > 0)
                     {
                         _frames.Add(new ExecutionFrame(
                             body,
                             ExecutionFrameKind.Until,
                             untilNode.SourceLine,
-                            NormalizeCondition(untilNode.Condition),
+                            untilNode.Condition,
                             conditionKnown,
                             path: $"{frame.Path}/{nodeIndex}"));
                         LogAstWalker(
@@ -501,7 +501,7 @@ public sealed class CommandExecutionEngine
         if (frame.Kind != ExecutionFrameKind.Until)
             return false;
 
-        if (!frame.UntilConditionKnown || string.IsNullOrWhiteSpace(frame.UntilCondition))
+        if (!frame.UntilConditionKnown || frame.UntilCondition == null)
             return false;
 
         if (!DslBooleanEvaluator.TryEvaluate(frame.UntilCondition, state, out var conditionValue))
@@ -515,12 +515,12 @@ public sealed class CommandExecutionEngine
     }
 
     private static bool ShouldEnterIf(
-        string? condition,
+        DslConditionAstNode condition,
         GameState state,
         out bool conditionKnown,
         out bool conditionValue)
     {
-        if (!DslBooleanEvaluator.TryEvaluate(NormalizeCondition(condition), state, out var evaluated))
+        if (!DslBooleanEvaluator.TryEvaluate(condition, state, out var evaluated))
         {
             conditionKnown = false;
             conditionValue = false;
@@ -533,13 +533,12 @@ public sealed class CommandExecutionEngine
     }
 
     private static bool ShouldEnterUntil(
-        string? condition,
+        DslConditionAstNode condition,
         GameState state,
         out bool conditionKnown,
         out bool conditionValue)
     {
-        var normalized = NormalizeCondition(condition);
-        if (!DslBooleanEvaluator.TryEvaluate(normalized, state, out var evaluated))
+        if (!DslBooleanEvaluator.TryEvaluate(condition, state, out var evaluated))
         {
             conditionKnown = false;
             conditionValue = false;
@@ -549,11 +548,6 @@ public sealed class CommandExecutionEngine
         conditionKnown = true;
         conditionValue = evaluated;
         return !evaluated;
-    }
-
-    private static string NormalizeCondition(string? condition)
-    {
-        return (condition ?? string.Empty).Trim().ToUpperInvariant();
     }
 
     private static CommandResult BuildCommandResult(DslCommandAstNode commandNode)
@@ -772,11 +766,14 @@ public sealed class CommandExecutionEngine
             if (!TryResolveFrameNodes(frameSnapshot.Path, kind, out var nodes))
                 return false;
 
+            if (!TryParseCheckpointCondition(frameSnapshot.UntilCondition, out var untilCondition))
+                return false;
+
             var frame = new ExecutionFrame(
                 nodes,
                 kind,
                 frameSnapshot.SourceLine,
-                frameSnapshot.UntilCondition,
+                untilCondition,
                 frameSnapshot.UntilConditionKnown,
                 frameSnapshot.Path);
 
@@ -912,11 +909,20 @@ public sealed class CommandExecutionEngine
                 Kind = f.Kind.ToString(),
                 SourceLine = f.SourceLine,
                 Index = f.Index,
-                UntilCondition = f.UntilCondition,
+                UntilCondition = DslBooleanEvaluator.RenderCondition(f.UntilCondition),
                 UntilConditionKnown = f.UntilConditionKnown,
                 Path = f.Path
             }).ToList()
         };
+    }
+
+    private static bool TryParseCheckpointCondition(string? condition, out DslConditionAstNode? parsed)
+    {
+        parsed = null;
+        if (string.IsNullOrWhiteSpace(condition))
+            return true;
+
+        return DslBooleanEvaluator.TryParseCondition(condition, out parsed, out _);
     }
 
     private sealed class ExecutionFrame
@@ -925,7 +931,7 @@ public sealed class CommandExecutionEngine
             IReadOnlyList<DslAstNode> nodes,
             ExecutionFrameKind kind,
             int sourceLine,
-            string? untilCondition,
+            DslConditionAstNode? untilCondition,
             bool untilConditionKnown,
             string path)
         {
@@ -940,7 +946,7 @@ public sealed class CommandExecutionEngine
         public IReadOnlyList<DslAstNode> Nodes { get; }
         public ExecutionFrameKind Kind { get; }
         public int SourceLine { get; }
-        public string? UntilCondition { get; }
+        public DslConditionAstNode? UntilCondition { get; }
         public bool UntilConditionKnown { get; }
         public string Path { get; }
         public int Index { get; set; }
