@@ -403,10 +403,20 @@ public sealed class HtmxBotWindow : IAppUi
 
         if (req.HttpMethod == "POST" && path == "/api/save-example")
         {
+            var form = ReadForm(req);
+            var script = GetValue(form, "script");
             string? activeBotId;
             lock (_lock) activeBotId = _snapshot.ActiveBotId;
             if (!string.IsNullOrWhiteSpace(activeBotId))
             {
+                if (!string.IsNullOrWhiteSpace(script))
+                {
+                    _runtimeCommandWriter?.TryWrite(new RuntimeCommandRequest(
+                        activeBotId!,
+                        RuntimeCommandNames.SetScript,
+                        script));
+                }
+
                 _runtimeCommandWriter?.TryWrite(new RuntimeCommandRequest(
                     activeBotId!,
                     RuntimeCommandNames.SaveExample));

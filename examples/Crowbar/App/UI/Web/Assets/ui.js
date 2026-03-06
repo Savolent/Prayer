@@ -529,7 +529,20 @@
   });
 
   document.body.addEventListener('htmx:beforeRequest', function (e) {
-    var path = (((e || {}).detail || {}).pathInfo || {}).requestPath || '';
+    var detail = (e || {}).detail || {};
+    var path = (detail.pathInfo || {}).requestPath || '';
+    if (path.endsWith('/api/save-example') || path === 'api/save-example') {
+      var scriptValue = '';
+      if (window._scriptEditor) {
+        scriptValue = window._scriptEditor.getValue() || '';
+      } else {
+        var scriptInput = document.getElementById('script-input');
+        scriptValue = scriptInput ? (scriptInput.value || '') : '';
+      }
+      detail.parameters = detail.parameters || {};
+      detail.parameters.script = scriptValue;
+    }
+
     if (path.endsWith('/api/halt') || path === 'api/halt') {
       window._haltHighlightPending = true;
       window._haltHighlightPendingUntil = Date.now() + 10000;
