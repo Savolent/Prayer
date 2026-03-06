@@ -83,10 +83,11 @@ public sealed partial class HtmxBotWindow
         string selectedProvider,
         string selectedModel)
     {
-        sb.AppendLine("<div class='card sidebar'><div class='sidebar-header'><h3>Bots</h3><div class='sidebar-actions'><button id='open-add-bot' class='icon-btn' type='button' title='Add Bot'>+</button></div></div>");
+        sb.AppendLine("<div class='card sidebar'>");
         sb.AppendLine("<div class='sidebar-llm'><div id='llm-summary' class='sidebar-llm-name' hx-get='partial/llm-summary' hx-trigger='load, every 1000ms' hx-swap='innerHTML'>"
             + BuildLlmSummaryHtml()
             + "</div><button id='open-llm-settings' class='icon-btn' type='button' title='LLM Settings'>⚙</button></div>");
+        sb.AppendLine("<div class='sidebar-header'><h3>Bots</h3><div class='sidebar-actions'><button id='open-add-bot' class='icon-btn' type='button' title='Add Bot'>+</button></div></div>");
         sb.AppendLine("<div id='bots-panel' hx-get='partial/bots' hx-trigger='load, every 1000ms' hx-swap='innerHTML'></div>");
         sb.AppendLine("<div id='llm-panel-layer' class='panel-layer' data-layer><div class='panel-card'><div class='panel-card-header'><h4>LLM Settings</h4><button class='panel-card-close' data-close-layer type='button'>Close</button></div>");
         sb.AppendLine("<form hx-post='api/llm-select' hx-swap='none' class='list'>");
@@ -165,7 +166,7 @@ public sealed partial class HtmxBotWindow
         sb.AppendLine(
             "<div class='row script-actions'><form hx-post='api/execute' hx-swap='none'><button id='execute-btn' class='execute-btn' type='submit' title='Execute'>▶️</button></form><form hx-post='api/halt' hx-swap='none'><button type='submit' title='Halt'>⏹️</button></form><form hx-post='api/save-example' hx-swap='none'><button type='submit' title='Thumbs Up'>👍</button></form></div></section>");
         sb.AppendLine("<section class='space-panel script-block'><div class='space-panel-title'>Prompt</div><form id='prompt-form' hx-post='api/prompt' hx-swap='none' hx-on::after-request='window.handlePromptAfterRequest(event)' class='list'><textarea name='prompt' rows='4' placeholder='prompt for script generation'></textarea><button type='submit'>Generate Script</button></form>");
-        sb.AppendLine("<form id='prompt-missions-form' hx-post='api/prompt-active-missions' hx-swap='none' hx-on::after-request='window.handlePromptAfterRequest(event)'><button type='submit'>Generate From Active Mission Objectives</button></form></section>");
+        sb.AppendLine("</section>");
         sb.AppendLine("<div id='right-panel' class='space-page' hx-get='partial/right' hx-trigger='load, every 1000ms' hx-swap='innerHTML'></div></div>");
     }
 }

@@ -670,11 +670,6 @@ public sealed partial class HtmxBotWindow : IAppUi
         foreach (var line in snapshot.ExecutionStatusLines)
             sb.Append(E(line)).AppendLine();
         sb.AppendLine("</pre></section>");
-
-        sb.AppendLine("<section class='space-panel script-block'><div class='space-panel-title'>Memory</div><pre class='log-pre'>");
-        foreach (var line in snapshot.Memory)
-            sb.Append(E(line)).AppendLine();
-        sb.AppendLine("</pre></section>");
         return sb.ToString();
     }
 

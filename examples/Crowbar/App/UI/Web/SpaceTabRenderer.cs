@@ -69,9 +69,14 @@ internal static class SpaceTabRenderer
         sb.AppendLine("<section class='space-panel'>");
         sb.AppendLine("<div class='space-panel-title'>Cargo Items</div>");
         if (vm.CargoItems.Count == 0)
+        {
             sb.AppendLine("<div class='small'>(empty)</div>");
+        }
         else
-            AppendList(sb, vm.CargoItems);
+        {
+            AppendCargoList(sb, vm.CargoItems);
+            AppendCargoAllActions(sb);
+        }
         sb.AppendLine("</section>");
 
         sb.AppendLine("</section>");
@@ -80,7 +85,10 @@ internal static class SpaceTabRenderer
 
     private static void AppendStatCard(StringBuilder sb, string label, string value)
     {
-        sb.Append("<div class='space-stat'><div class='space-stat-label'>")
+        var statKind = label.Trim().ToLowerInvariant();
+        sb.Append("<div class='space-stat ")
+            .Append(E($"stat-{statKind}"))
+            .Append("'><div class='space-stat-label'>")
             .Append(E(label))
             .Append("</div><div class='space-stat-value'>")
             .Append(E(string.IsNullOrWhiteSpace(value) ? "-" : value))
@@ -94,6 +102,7 @@ internal static class SpaceTabRenderer
             : 0.0d;
         var widthPct = (int)Math.Round(ratio * 100.0d, MidpointRounding.AwayFromZero);
         var valueText = string.IsNullOrWhiteSpace(value) ? "-" : value;
+        var meterKind = label.Trim().ToLowerInvariant();
 
         sb.Append("<div class='space-stat compact'><div class='space-stat-label'>")
             .Append(E(label))
@@ -103,7 +112,9 @@ internal static class SpaceTabRenderer
 
         sb.Append("<div class='space-meter' role='img' aria-label='")
             .Append(E($"{label}: {valueText} ({widthPct}%)"))
-            .Append("'><div class='space-bar'><div class='space-bar-fill' style='width:")
+            .Append("'><div class='space-bar'><div class='space-bar-fill ")
+            .Append(E($"meter-{meterKind}"))
+            .Append("' style='width:")
             .Append(widthPct)
             .AppendLine("%'></div></div><div class='space-meter-pct'>")
             .Append(widthPct)
@@ -144,6 +155,64 @@ internal static class SpaceTabRenderer
         foreach (var line in lines)
             sb.Append("<li>").Append(E(line)).AppendLine("</li>");
         sb.AppendLine("</ul>");
+    }
+
+    private static void AppendCargoList(StringBuilder sb, IReadOnlyList<string> lines)
+    {
+        sb.AppendLine("<div class='cargo-list'>");
+        foreach (var line in lines)
+        {
+            var itemId = TryExtractCargoItemId(line);
+            sb.Append("<div class='cargo-row'><div class='cargo-label'>")
+                .Append(E(line))
+                .AppendLine("</div>");
+            if (!string.IsNullOrWhiteSpace(itemId))
+            {
+                sb.Append("<div class='cargo-actions'>");
+                AppendScriptChip(sb, $"sell {itemId};", "Sell");
+                AppendScriptChip(sb, $"stash {itemId};", "Stash");
+                sb.AppendLine("</div>");
+            }
+            sb.AppendLine("</div>");
+        }
+        sb.AppendLine("</div>");
+    }
+
+    private static void AppendCargoAllActions(StringBuilder sb)
+    {
+        sb.AppendLine("<div class='cargo-all-actions'>");
+        AppendScriptChip(sb, "sell;", "Sell All");
+        AppendScriptChip(sb, "stash;", "Stash All");
+        sb.AppendLine("</div>");
+    }
+
+    private static void AppendScriptChip(StringBuilder sb, string script, string label)
+    {
+        sb.Append("<form class='space-chip-form' hx-post='api/control-input' hx-swap='none' hx-on::after-request='window.executeIfOk(event)'>")
+            .Append("<input type='hidden' name='script' value='").Append(E(script)).Append("'>")
+            .Append("<button type='submit' class='space-chip'>")
+            .Append(E(label))
+            .AppendLine("</button></form>");
+    }
+
+    private static string TryExtractCargoItemId(string line)
+    {
+        var value = (line ?? string.Empty).Trim();
+        if (value.Length == 0)
+            return string.Empty;
+
+        int qtyMarker = value.LastIndexOf(" x", StringComparison.Ordinal);
+        if (qtyMarker > 0)
+        {
+            var qtyText = value[(qtyMarker + 2)..].Trim();
+            if (qtyText.Length > 0 && qtyText.All(char.IsDigit))
+            {
+                return value[..qtyMarker].Trim();
+            }
+        }
+
+        var token = value.Split(' ', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? string.Empty;
+        return token.Trim();
     }
 
     private static SpaceViewModel Parse(string markdown)
