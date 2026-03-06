@@ -543,7 +543,11 @@ internal sealed class PrayerRuntimeSession : IDisposable
             value => LastHaltedSnapshotAt = value,
             UpdateLatestState,
             AppendStatus,
-            _ => { },
+            line =>
+            {
+                if (!string.IsNullOrWhiteSpace(line))
+                    _logger.LogWarning("RuntimeHost: {Line}", line);
+            },
             reason =>
             {
                 AppendStatus($"[{Label}] Global stop requested: {reason}");

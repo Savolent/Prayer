@@ -393,12 +393,13 @@ public sealed class RuntimeHost : IRuntimeHost
         GameState state,
         bool includeScriptRefuel)
     {
-        if (!(state.Docked && state.CurrentPOI.IsStation))
-            return state;
-
         var current = state;
-        current = await TryAutoWithdrawStationCreditsAsync(current);
         current = await TryAutoCompleteMissionsAsync(current);
+
+        if (!(current.Docked && current.CurrentPOI.IsStation))
+            return current;
+
+        current = await TryAutoWithdrawStationCreditsAsync(current);
 
         if (includeScriptRefuel)
             current = await TryAutoRefuelBetweenScriptStepsAsync(current);
@@ -457,16 +458,45 @@ public sealed class RuntimeHost : IRuntimeHost
         if (completableMissionIds.Count == 0)
             return state;
 
+        int successfulCompletions = 0;
+        int failedCompletions = 0;
+        _log($"bot_worker | {_label} | auto_complete_mission_attempt_batch | count={completableMissionIds.Count}");
+        foreach (var missionId in completableMissionIds)
+        {
+            _log($"bot_worker | {_label} | auto_complete_mission_attempt | mission_id={missionId}");
+            try
+            {
+                await _transport.ExecuteCommandAsync("complete_mission", new { mission_id = missionId });
+                successfulCompletions++;
+            }
+            catch (Exception ex)
+            {
+                failedCompletions++;
+                _log($"bot_worker | {_label} | auto_complete_mission_failed | mission_id={missionId} | {ex.GetType().Name}: {ex.Message}");
+                _publishStatus($"[{_label}] Auto-complete mission failed ({missionId}): {ex.Message}");
+            }
+        }
+
+        if (successfulCompletions <= 0)
+        {
+            if (failedCompletions > 0)
+            {
+                _publishStatus($"[{_label}] Auto-complete attempted {failedCompletions} mission(s), none succeeded");
+            }
+
+            return state;
+        }
+
         try
         {
-            foreach (var missionId in completableMissionIds)
-                await _transport.ExecuteCommandAsync("complete_mission", new { mission_id = missionId });
-
             var refreshed = await _stateProvider.GetLatestStateAsync();
             int completedCount = Math.Max(0, state.ActiveMissions.Length - refreshed.ActiveMissions.Length);
 
             if (completedCount > 0)
                 _publishStatus($"[{_label}] Auto-completed {completedCount} mission(s)");
+
+            if (failedCompletions > 0)
+                _publishStatus($"[{_label}] Auto-complete had {failedCompletions} failure(s); see logs");
 
             return refreshed;
         }
