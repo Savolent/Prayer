@@ -22,8 +22,8 @@ public partial class GameState
     public PlayerShip Ship { get; set; } = new();
     public int Credits { get; set; }
     public bool Docked { get; set; }
-    public string[] ShipyardShowroomLines { get; set; } = Array.Empty<string>();
-    public string[] ShipyardListingLines { get; set; } = Array.Empty<string>();
+    public ShipyardShowroomEntry[] ShipyardShowroom { get; set; } = Array.Empty<ShipyardShowroomEntry>();
+    public ShipyardListingEntry[] ShipyardListings { get; set; } = Array.Empty<ShipyardListingEntry>();
     public Catalogue ShipCatalogue { get; set; } = new();
     public OwnedShipInfo[] OwnedShips { get; set; } = Array.Empty<OwnedShipInfo>();
 
@@ -145,8 +145,8 @@ public class StationInfo
     public MarketState? Market { get; set; }
     public List<OpenOrderInfo> BuyOrders { get; set; } = new();
     public List<OpenOrderInfo> SellOrders { get; set; } = new();
-    public string[] ShipyardShowroomLines { get; set; } = Array.Empty<string>();
-    public string[] ShipyardListingLines { get; set; } = Array.Empty<string>();
+    public ShipyardShowroomEntry[] ShipyardShowroom { get; set; } = Array.Empty<ShipyardShowroomEntry>();
+    public ShipyardListingEntry[] ShipyardListings { get; set; } = Array.Empty<ShipyardListingEntry>();
 }
 
 public class MarketCacheSnapshot
@@ -160,8 +160,31 @@ public class ShipyardCacheSnapshot
 {
     public string StationId { get; set; } = "";
     public DateTime CapturedAtUtc { get; set; }
-    public string[] ShowroomLines { get; set; } = Array.Empty<string>();
-    public string[] ListingLines { get; set; } = Array.Empty<string>();
+    public ShipyardShowroomEntry[] Showroom { get; set; } = Array.Empty<ShipyardShowroomEntry>();
+    public ShipyardListingEntry[] Listings { get; set; } = Array.Empty<ShipyardListingEntry>();
+}
+
+public sealed class ShipyardShowroomEntry
+{
+    public string ShipClassId { get; set; } = "";
+    public string? ShipId { get; set; }
+    public string Name { get; set; } = "";
+    public string Category { get; set; } = "";
+    public int? Tier { get; set; }
+    public int? Scale { get; set; }
+    public int? Hull { get; set; }
+    public int? Shield { get; set; }
+    public int? Cargo { get; set; }
+    public int? Speed { get; set; }
+    public decimal? Price { get; set; }
+}
+
+public sealed class ShipyardListingEntry
+{
+    public string ListingId { get; set; } = "";
+    public string Name { get; set; } = "";
+    public string ClassId { get; set; } = "";
+    public decimal? Price { get; set; }
 }
 
 public class EconomyDeal

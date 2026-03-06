@@ -426,10 +426,10 @@ public class SpaceMoltHttpClient : IDisposable, IRuntimeTransport
 
     internal void SaveShipyardCacheToDisk(
         string stationId,
-        string[] showroomLines,
-        string[] listingLines)
+        ShipyardShowroomEntry[] showroom,
+        ShipyardListingEntry[] listings)
     {
-        _cacheRepository.SaveShipyardCacheToDisk(stationId, showroomLines, listingLines);
+        _cacheRepository.SaveShipyardCacheToDisk(stationId, showroom, listings);
     }
 
     internal bool TryGetCachedCatalogue(string fileKey, out SpaceMoltCatalogueCacheEntry entry)

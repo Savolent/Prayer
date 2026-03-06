@@ -81,8 +81,8 @@ ECONOMY
     {
         var prices = state.BuildEstimatedItemPrices();
         var cargo = GameState.StripMarkdown(GameState.FormatCargo(state.Ship.Cargo, prices));
-        var showroom = GameState.StripMarkdown(GameState.FormatShipyardShowroomLines(state.ShipyardShowroomLines));
-        var listings = GameState.StripMarkdown(GameState.FormatShipyardShowroomLines(state.ShipyardListingLines));
+        var showroom = GameState.StripMarkdown(GameState.FormatShipyardShowroom(state.ShipyardShowroom));
+        var listings = GameState.StripMarkdown(GameState.FormatShipyardListings(state.ShipyardListings));
         int currentPage = state.ShipCatalogue.Page ?? 1;
         int totalPages = state.ShipCatalogue.TotalPages ?? 1;
         int totalItems = state.ShipCatalogue.Total ?? state.ShipCatalogue.TotalItems ?? 0;

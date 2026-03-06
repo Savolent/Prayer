@@ -111,8 +111,8 @@ internal sealed class SpaceMoltCacheRepository
                     stationCache[snapshot.StationId] = stationInfo;
                 }
 
-                stationInfo.ShipyardShowroomLines = snapshot.ShowroomLines ?? Array.Empty<string>();
-                stationInfo.ShipyardListingLines = snapshot.ListingLines ?? Array.Empty<string>();
+                stationInfo.ShipyardShowroom = snapshot.Showroom ?? Array.Empty<ShipyardShowroomEntry>();
+                stationInfo.ShipyardListings = snapshot.Listings ?? Array.Empty<ShipyardListingEntry>();
             }
             catch
             {
@@ -190,8 +190,8 @@ internal sealed class SpaceMoltCacheRepository
 
     public void SaveShipyardCacheToDisk(
         string stationId,
-        string[] showroomLines,
-        string[] listingLines)
+        ShipyardShowroomEntry[] showroom,
+        ShipyardListingEntry[] listings)
     {
         try
         {
@@ -200,8 +200,8 @@ internal sealed class SpaceMoltCacheRepository
             {
                 StationId = stationId,
                 CapturedAtUtc = DateTime.UtcNow,
-                ShowroomLines = showroomLines ?? Array.Empty<string>(),
-                ListingLines = listingLines ?? Array.Empty<string>()
+                Showroom = showroom ?? Array.Empty<ShipyardShowroomEntry>(),
+                Listings = listings ?? Array.Empty<ShipyardListingEntry>()
             };
 
             string json = JsonSerializer.Serialize(snapshot, new JsonSerializerOptions

@@ -162,10 +162,10 @@ Fuel: {Ship.Fuel}/{Ship.MaxFuel}
 Cargo: {Ship.CargoUsed}/{Ship.CargoCapacity}
 
 ### Showroom
-{FormatShipyardShowroomLines(ShipyardShowroomLines)}
+{FormatShipyardShowroom(ShipyardShowroom)}
 
 ### Player Listings
-{FormatShipyardShowroomLines(ShipyardListingLines)}
+{FormatShipyardListings(ShipyardListings)}
 
 ### Cargo
 {cargo}
@@ -663,12 +663,38 @@ Your Open Sell Orders:
         return string.Join("\n", lines);
     }
 
-    internal static string FormatShipyardShowroomLines(string[] lines)
+    internal static string FormatShipyardShowroom(ShipyardShowroomEntry[] entries)
     {
-        if (lines == null || lines.Length == 0)
+        if (entries == null || entries.Length == 0)
             return "- _(no showroom listings)_";
 
-        return string.Join("\n", lines.Select(l => "- " + l));
+        return string.Join(
+            "\n",
+            entries.Select(entry =>
+            {
+                string name = string.IsNullOrWhiteSpace(entry.Name) ? "ship" : entry.Name;
+                string classId = string.IsNullOrWhiteSpace(entry.ShipClassId) ? "-" : entry.ShipClassId;
+                string stats = $"Hull {entry.Hull?.ToString() ?? "-"} | Shield {entry.Shield?.ToString() ?? "-"} | Cargo {entry.Cargo?.ToString() ?? "-"} | Speed {entry.Speed?.ToString() ?? "-"}";
+                string price = entry.Price.HasValue ? $"@ {Math.Round(entry.Price.Value, 2):0.##}cr" : "-";
+                return $"- `{name}` ({classId}) | {stats} | {price}";
+            }));
+    }
+
+    internal static string FormatShipyardListings(ShipyardListingEntry[] entries)
+    {
+        if (entries == null || entries.Length == 0)
+            return "- _(no player listings)_";
+
+        return string.Join(
+            "\n",
+            entries.Select(entry =>
+            {
+                string listingId = string.IsNullOrWhiteSpace(entry.ListingId) ? "-" : entry.ListingId;
+                string name = string.IsNullOrWhiteSpace(entry.Name) ? "ship" : entry.Name;
+                string classId = string.IsNullOrWhiteSpace(entry.ClassId) ? "-" : entry.ClassId;
+                string price = entry.Price.HasValue ? $"@ {Math.Round(entry.Price.Value, 2):0.##}cr" : "-";
+                return $"- `{listingId}`: `{name}` ({classId}) | {price}";
+            }));
     }
 
     internal static string FormatOwnedShips(OwnedShipInfo[] ships)

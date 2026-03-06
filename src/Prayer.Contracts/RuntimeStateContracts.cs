@@ -19,8 +19,8 @@ public sealed class RuntimeGameStateDto
     public RuntimePlayerShipDto Ship { get; set; } = new();
     public int Credits { get; set; }
     public bool Docked { get; set; }
-    public string[] ShipyardShowroomLines { get; set; } = Array.Empty<string>();
-    public string[] ShipyardListingLines { get; set; } = Array.Empty<string>();
+    public RuntimeShipyardShowroomEntryDto[] ShipyardShowroom { get; set; } = Array.Empty<RuntimeShipyardShowroomEntryDto>();
+    public RuntimeShipyardListingEntryDto[] ShipyardListings { get; set; } = Array.Empty<RuntimeShipyardListingEntryDto>();
     public RuntimeCatalogueDto ShipCatalogue { get; set; } = new();
     public RuntimeOwnedShipInfoDto[] OwnedShips { get; set; } = Array.Empty<RuntimeOwnedShipInfoDto>();
     public RuntimeMissionInfoDto[] ActiveMissions { get; set; } = Array.Empty<RuntimeMissionInfoDto>();
@@ -156,6 +156,29 @@ public sealed class RuntimeOwnedShipInfoDto
     public string ClassId { get; set; } = "";
     public string Location { get; set; } = "";
     public bool IsActive { get; set; }
+}
+
+public sealed class RuntimeShipyardShowroomEntryDto
+{
+    public string ShipClassId { get; set; } = "";
+    public string? ShipId { get; set; }
+    public string Name { get; set; } = "";
+    public string Category { get; set; } = "";
+    public int? Tier { get; set; }
+    public int? Scale { get; set; }
+    public int? Hull { get; set; }
+    public int? Shield { get; set; }
+    public int? Cargo { get; set; }
+    public int? Speed { get; set; }
+    public decimal? Price { get; set; }
+}
+
+public sealed class RuntimeShipyardListingEntryDto
+{
+    public string ListingId { get; set; } = "";
+    public string Name { get; set; } = "";
+    public string ClassId { get; set; } = "";
+    public decimal? Price { get; set; }
 }
 
 public sealed class RuntimeItemStackDto

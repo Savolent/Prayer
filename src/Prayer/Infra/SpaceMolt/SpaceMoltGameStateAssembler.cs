@@ -141,32 +141,30 @@ internal sealed class SpaceMoltGameStateAssembler
             }
 
             bool shouldRefreshShowroom =
-                stationInfo.ShipyardShowroomLines == null ||
-                stationInfo.ShipyardShowroomLines.Length == 0;
+                stationInfo.ShipyardShowroom == null ||
+                stationInfo.ShipyardShowroom.Length == 0;
             bool shouldRefreshListings =
-                stationInfo.ShipyardListingLines == null ||
-                stationInfo.ShipyardListingLines.Length == 0;
+                stationInfo.ShipyardListings == null ||
+                stationInfo.ShipyardListings.Length == 0;
 
             if (shouldRefreshShowroom || shouldRefreshListings)
             {
                 if (shouldRefreshShowroom)
                 {
                     var showroomResult = await _owner.ExecuteAsync("shipyard_showroom");
-                    if (SpaceMoltResponseParsers.TryParseShipyardShowroom(showroomResult, out var showroomLines))
-                        stationInfo.ShipyardShowroomLines = showroomLines;
+                    stationInfo.ShipyardShowroom = SpaceMoltResponseParsers.ParseShipyardShowroom(showroomResult);
                 }
 
                 if (shouldRefreshListings)
                 {
                     var listingsResult = await _owner.ExecuteAsync("browse_ships");
-                    if (SpaceMoltResponseParsers.TryParseShipyardListings(listingsResult, out var listingLines))
-                        stationInfo.ShipyardListingLines = listingLines;
+                    stationInfo.ShipyardListings = SpaceMoltResponseParsers.ParseShipyardListings(listingsResult);
                 }
 
                 _owner.SaveShipyardCacheToDisk(
                     stationId,
-                    stationInfo.ShipyardShowroomLines ?? Array.Empty<string>(),
-                    stationInfo.ShipyardListingLines ?? Array.Empty<string>());
+                    stationInfo.ShipyardShowroom ?? Array.Empty<ShipyardShowroomEntry>(),
+                    stationInfo.ShipyardListings ?? Array.Empty<ShipyardListingEntry>());
             }
 
             if (_owner.TryGetCachedCatalogue(SpaceMoltCatalogService.FullShipCatalogueCacheFileKey, out var cachedFullCatalogue))
@@ -192,8 +190,8 @@ internal sealed class SpaceMoltGameStateAssembler
                 _owner.BuildBestDealsForCurrentStation(stationId, maxDeals: 3),
                 stationInfo.BuyOrders.ToArray(),
                 stationInfo.SellOrders.ToArray(),
-                stationInfo.ShipyardShowroomLines ?? Array.Empty<string>(),
-                stationInfo.ShipyardListingLines ?? Array.Empty<string>(),
+                stationInfo.ShipyardShowroom ?? Array.Empty<ShipyardShowroomEntry>(),
+                stationInfo.ShipyardListings ?? Array.Empty<ShipyardListingEntry>(),
                 state.ShipCatalogue);
         }
         else

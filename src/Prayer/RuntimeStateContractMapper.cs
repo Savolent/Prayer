@@ -22,8 +22,8 @@ internal static class RuntimeStateContractMapper
             Ship = Map(source.Ship),
             Credits = source.Credits,
             Docked = source.Docked,
-            ShipyardShowroomLines = source.ShipyardShowroomLines.ToArray(),
-            ShipyardListingLines = source.ShipyardListingLines.ToArray(),
+            ShipyardShowroom = source.ShipyardShowroom.Select(Map).ToArray(),
+            ShipyardListings = source.ShipyardListings.Select(Map).ToArray(),
             ShipCatalogue = Map(source.ShipCatalogue),
             OwnedShips = source.OwnedShips.Select(Map).ToArray(),
             ActiveMissions = source.ActiveMissions.Select(Map).ToArray(),
@@ -222,6 +222,35 @@ internal static class RuntimeStateContractMapper
             ClassId = source.ClassId,
             Location = source.Location,
             IsActive = source.IsActive
+        };
+    }
+
+    private static Contracts.RuntimeShipyardShowroomEntryDto Map(ShipyardShowroomEntry source)
+    {
+        return new Contracts.RuntimeShipyardShowroomEntryDto
+        {
+            ShipClassId = source.ShipClassId,
+            ShipId = source.ShipId,
+            Name = source.Name,
+            Category = source.Category,
+            Tier = source.Tier,
+            Scale = source.Scale,
+            Hull = source.Hull,
+            Shield = source.Shield,
+            Cargo = source.Cargo,
+            Speed = source.Speed,
+            Price = source.Price
+        };
+    }
+
+    private static Contracts.RuntimeShipyardListingEntryDto Map(ShipyardListingEntry source)
+    {
+        return new Contracts.RuntimeShipyardListingEntryDto
+        {
+            ListingId = source.ListingId,
+            Name = source.Name,
+            ClassId = source.ClassId,
+            Price = source.Price
         };
     }
 

@@ -132,11 +132,11 @@ OPEN ORDERS
 
     private static string BuildShipyardState(GameState state)
     {
-        var showroom = state.ShipyardShowroomLines?.Length > 0
-            ? string.Join("\n", state.ShipyardShowroomLines)
+        var showroom = state.ShipyardShowroom?.Length > 0
+            ? string.Join("\n", state.ShipyardShowroom.Select(FormatShowroomLine))
             : "- (none)";
-        var listings = state.ShipyardListingLines?.Length > 0
-            ? string.Join("\n", state.ShipyardListingLines)
+        var listings = state.ShipyardListings?.Length > 0
+            ? string.Join("\n", state.ShipyardListings.Select(FormatListingLine))
             : "- (none)";
 
         return
@@ -151,29 +151,38 @@ PLAYER LISTINGS
 
     private static ShipyardUiModel BuildShipyardModel(GameState state)
     {
-        var showroom = (state.ShipyardShowroomLines ?? Array.Empty<string>())
-            .Where(v => !string.IsNullOrWhiteSpace(v))
+        var showroom = (state.ShipyardShowroom ?? Array.Empty<ShipyardShowroomEntry>())
+            .Where(v => !string.IsNullOrWhiteSpace(v.ShipClassId))
             .Select(v =>
             {
-                var trimmed = v.Trim();
-                var id = ExtractLeadingToken(trimmed);
                 return new ShipyardUiEntry(
-                    Id: id,
-                    DisplayText: trimmed,
-                    Faction: "Local");
+                    Id: v.ShipClassId,
+                    DisplayText: FormatShowroomLine(v),
+                    Faction: "Local",
+                    Name: string.IsNullOrWhiteSpace(v.Name) ? null : v.Name,
+                    ClassId: v.ShipClassId,
+                    Category: string.IsNullOrWhiteSpace(v.Category) ? null : v.Category,
+                    Tier: v.Tier,
+                    Scale: v.Scale,
+                    Hull: v.Hull,
+                    Shield: v.Shield,
+                    Cargo: v.Cargo,
+                    Speed: v.Speed,
+                    Price: v.Price);
             })
             .ToArray();
 
-        var listings = (state.ShipyardListingLines ?? Array.Empty<string>())
-            .Where(v => !string.IsNullOrWhiteSpace(v))
+        var listings = (state.ShipyardListings ?? Array.Empty<ShipyardListingEntry>())
+            .Where(v => !string.IsNullOrWhiteSpace(v.ListingId))
             .Select(v =>
             {
-                var trimmed = v.Trim();
-                var id = ExtractLeadingToken(trimmed);
                 return new ShipyardUiEntry(
-                    Id: id,
-                    DisplayText: trimmed,
-                    Faction: "Listings");
+                    Id: v.ListingId,
+                    DisplayText: FormatListingLine(v),
+                    Faction: "Listings",
+                    Name: string.IsNullOrWhiteSpace(v.Name) ? null : v.Name,
+                    ClassId: string.IsNullOrWhiteSpace(v.ClassId) ? null : v.ClassId,
+                    Price: v.Price);
             })
             .ToArray();
 
@@ -284,16 +293,32 @@ SHIPS
         return lines.Count == 0 ? "- (none)" : string.Join("\n", lines);
     }
 
-    private static string ExtractLeadingToken(string line)
+    private static string FormatShowroomLine(ShipyardShowroomEntry entry)
     {
-        var value = (line ?? string.Empty).Trim();
-        if (value.Length == 0)
-            return string.Empty;
+        var name = string.IsNullOrWhiteSpace(entry.Name) ? "ship" : entry.Name;
+        var classId = string.IsNullOrWhiteSpace(entry.ShipClassId) ? "-" : entry.ShipClassId;
+        var parts = new List<string> { $"`{name}` ({classId})" };
+        if (entry.Hull.HasValue || entry.Shield.HasValue || entry.Cargo.HasValue || entry.Speed.HasValue)
+        {
+            parts.Add(
+                $"Hull {entry.Hull?.ToString() ?? "-"} | Shield {entry.Shield?.ToString() ?? "-"} | Cargo {entry.Cargo?.ToString() ?? "-"} | Speed {entry.Speed?.ToString() ?? "-"}");
+        }
 
-        return value
-            .Split(' ', StringSplitOptions.RemoveEmptyEntries)
-            .FirstOrDefault()?
-            .Trim('`', '[', ']', '(', ')', ',') ?? string.Empty;
+        if (entry.Price.HasValue)
+            parts.Add($"@ {Math.Round(entry.Price.Value, 2):0.##}cr");
+
+        return string.Join(" | ", parts);
+    }
+
+    private static string FormatListingLine(ShipyardListingEntry entry)
+    {
+        var listingId = string.IsNullOrWhiteSpace(entry.ListingId) ? "-" : entry.ListingId;
+        var name = string.IsNullOrWhiteSpace(entry.Name) ? "ship" : entry.Name;
+        var classId = string.IsNullOrWhiteSpace(entry.ClassId) ? "-" : entry.ClassId;
+        var text = $"`{listingId}`: `{name}` ({classId})";
+        if (entry.Price.HasValue)
+            return $"{text} | @ {Math.Round(entry.Price.Value, 2):0.##}cr";
+        return text;
     }
 
     private static string ResolveShipFaction(CatalogueEntry entry)

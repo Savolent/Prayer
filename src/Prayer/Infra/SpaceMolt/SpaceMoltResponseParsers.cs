@@ -4,12 +4,10 @@ using System.Text.Json;
 
 internal static class SpaceMoltResponseParsers
 {
-    public static bool TryParseShipyardShowroom(JsonElement response, out string[] lines)
+    public static ShipyardShowroomEntry[] ParseShipyardShowroom(JsonElement response)
     {
-        lines = Array.Empty<string>();
-
         if (response.ValueKind != JsonValueKind.Object)
-            return false;
+            return Array.Empty<ShipyardShowroomEntry>();
 
         JsonElement result = response;
         if (response.TryGetProperty("result", out var wrappedResult) &&
@@ -23,19 +21,23 @@ internal static class SpaceMoltResponseParsers
             (result.TryGetProperty("ships", out shipsArray) && shipsArray.ValueKind == JsonValueKind.Array) ||
             (result.TryGetProperty("listings", out shipsArray) && shipsArray.ValueKind == JsonValueKind.Array);
         if (!found)
-            return false;
+            return Array.Empty<ShipyardShowroomEntry>();
 
-        var entries = new List<string>();
+        var entries = new List<ShipyardShowroomEntry>();
         foreach (var ship in shipsArray.EnumerateArray())
         {
             if (ship.ValueKind != JsonValueKind.Object)
                 continue;
 
-            string name = SpaceMoltJson.TryGetString(ship, "name") ?? "ship";
+            string name = SpaceMoltJson.TryGetString(ship, "name") ?? "";
             string classId =
                 SpaceMoltJson.TryGetString(ship, "class_id") ??
                 SpaceMoltJson.TryGetString(ship, "ship_class") ??
-                "-";
+                "";
+            string? shipId = SpaceMoltJson.TryGetString(ship, "ship_id");
+            string category = SpaceMoltJson.TryGetString(ship, "category") ?? "";
+            int? tier = SpaceMoltJson.TryGetInt(ship, "tier");
+            int? scale = SpaceMoltJson.TryGetInt(ship, "scale");
 
             int? hull = SpaceMoltJson.TryGetInt(ship, "hull", "base_hull");
             int? shield = SpaceMoltJson.TryGetInt(ship, "shield", "base_shield");
@@ -47,27 +49,31 @@ internal static class SpaceMoltResponseParsers
                 (ship.TryGetProperty("price", out var p1) && p1.ValueKind == JsonValueKind.Number && p1.TryGetDecimal(out var d1)) ? d1 :
                 null;
 
-            var parts = new List<string> { $"`{name}` ({classId})" };
-            if (hull.HasValue || shield.HasValue || cargo.HasValue || speed.HasValue)
-                parts.Add($"Hull {hull?.ToString() ?? "-"} | Shield {shield?.ToString() ?? "-"} | Cargo {cargo?.ToString() ?? "-"} | Speed {speed?.ToString() ?? "-"}");
-            if (price.HasValue)
-                parts.Add($"@ {Math.Round(price.Value, 2):0.##}cr");
-
-            entries.Add(string.Join(" | ", parts));
+            entries.Add(new ShipyardShowroomEntry
+            {
+                ShipClassId = classId,
+                ShipId = shipId,
+                Name = name,
+                Category = category,
+                Tier = tier,
+                Scale = scale,
+                Hull = hull,
+                Shield = shield,
+                Cargo = cargo,
+                Speed = speed,
+                Price = price
+            });
             if (entries.Count >= 12)
                 break;
         }
 
-        lines = entries.ToArray();
-        return true;
+        return entries.ToArray();
     }
 
-    public static bool TryParseShipyardListings(JsonElement response, out string[] lines)
+    public static ShipyardListingEntry[] ParseShipyardListings(JsonElement response)
     {
-        lines = Array.Empty<string>();
-
         if (response.ValueKind != JsonValueKind.Object)
-            return false;
+            return Array.Empty<ShipyardListingEntry>();
 
         JsonElement result = response;
         if (response.TryGetProperty("result", out var wrappedResult) &&
@@ -81,9 +87,9 @@ internal static class SpaceMoltResponseParsers
             (result.TryGetProperty("listings", out listingsArray) && listingsArray.ValueKind == JsonValueKind.Array) ||
             (result.TryGetProperty("ships", out listingsArray) && listingsArray.ValueKind == JsonValueKind.Array);
         if (!found)
-            return false;
+            return Array.Empty<ShipyardListingEntry>();
 
-        var entries = new List<string>();
+        var entries = new List<ShipyardListingEntry>();
         foreach (var listing in listingsArray.EnumerateArray())
         {
             if (listing.ValueKind != JsonValueKind.Object)
@@ -92,29 +98,30 @@ internal static class SpaceMoltResponseParsers
             string listingId =
                 SpaceMoltJson.TryGetString(listing, "listing_id") ??
                 SpaceMoltJson.TryGetString(listing, "id") ??
-                "-";
-            string name = SpaceMoltJson.TryGetString(listing, "name") ?? "ship";
+                "";
+            string name = SpaceMoltJson.TryGetString(listing, "name") ?? "";
             string classId =
                 SpaceMoltJson.TryGetString(listing, "class_id") ??
                 SpaceMoltJson.TryGetString(listing, "ship_class") ??
-                "-";
+                "";
 
             decimal? price =
                 (listing.TryGetProperty("price", out var p0) && p0.ValueKind == JsonValueKind.Number && p0.TryGetDecimal(out var d0)) ? d0 :
                 (listing.TryGetProperty("price_each", out var p1) && p1.ValueKind == JsonValueKind.Number && p1.TryGetDecimal(out var d1)) ? d1 :
                 null;
 
-            var parts = new List<string> { $"`{listingId}`: `{name}` ({classId})" };
-            if (price.HasValue)
-                parts.Add($"@ {Math.Round(price.Value, 2):0.##}cr");
-
-            entries.Add(string.Join(" | ", parts));
+            entries.Add(new ShipyardListingEntry
+            {
+                ListingId = listingId,
+                Name = name,
+                ClassId = classId,
+                Price = price
+            });
             if (entries.Count >= 12)
                 break;
         }
 
-        lines = entries.ToArray();
-        return true;
+        return entries.ToArray();
     }
 
     public static bool TryParseOwnedShips(JsonElement response, out OwnedShipInfo[] ships)

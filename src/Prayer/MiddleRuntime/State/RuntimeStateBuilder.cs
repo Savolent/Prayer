@@ -73,8 +73,8 @@ public sealed class RuntimeStateBuilder
         EconomyDeal[] economyDeals,
         OpenOrderInfo[] ownBuyOrders,
         OpenOrderInfo[] ownSellOrders,
-        string[] shipyardShowroomLines,
-        string[] shipyardListingLines,
+        ShipyardShowroomEntry[] shipyardShowroom,
+        ShipyardListingEntry[] shipyardListings,
         Catalogue shipCatalogue)
     {
         state.StorageCredits = storageCredits;
@@ -82,8 +82,8 @@ public sealed class RuntimeStateBuilder
         state.EconomyDeals = economyDeals;
         state.OwnBuyOrders = ownBuyOrders;
         state.OwnSellOrders = ownSellOrders;
-        state.ShipyardShowroomLines = shipyardShowroomLines;
-        state.ShipyardListingLines = shipyardListingLines;
+        state.ShipyardShowroom = shipyardShowroom;
+        state.ShipyardListings = shipyardListings;
         state.ShipCatalogue = shipCatalogue;
     }
 
@@ -94,8 +94,8 @@ public sealed class RuntimeStateBuilder
         state.EconomyDeals = Array.Empty<EconomyDeal>();
         state.OwnBuyOrders = Array.Empty<OpenOrderInfo>();
         state.OwnSellOrders = Array.Empty<OpenOrderInfo>();
-        state.ShipyardShowroomLines = Array.Empty<string>();
-        state.ShipyardListingLines = Array.Empty<string>();
+        state.ShipyardShowroom = Array.Empty<ShipyardShowroomEntry>();
+        state.ShipyardListings = Array.Empty<ShipyardListingEntry>();
         state.ShipCatalogue = new Catalogue();
     }
 
