@@ -24,7 +24,16 @@ var snapshot = new RuntimeStateResponse(
                 Type = "station"
             }
         },
-        Systems = new[] { "core" }
+        Systems = new[] { "core" },
+        Ship = new RuntimePlayerShipDto
+        {
+            Name = "Starter",
+            ClassId = "fighter_scout",
+            Fuel = 12,
+            MaxFuel = 20,
+            CargoUsed = 2,
+            CargoCapacity = 8
+        }
     },
     Memory: new[] { "m1" },
     ExecutionStatusLines: new[] { "ok" },
@@ -48,6 +57,15 @@ var state = root.GetProperty("state");
 AssertType(state, "system", JsonValueKind.String);
 AssertType(state, "currentPOI", JsonValueKind.Object);
 AssertType(state, "systems", JsonValueKind.Array);
+AssertType(state, "ship", JsonValueKind.Object);
+
+var ship = state.GetProperty("ship");
+AssertType(ship, "name", JsonValueKind.String);
+AssertType(ship, "classId", JsonValueKind.String);
+AssertType(ship, "fuel", JsonValueKind.Number);
+AssertType(ship, "maxFuel", JsonValueKind.Number);
+AssertType(ship, "cargoUsed", JsonValueKind.Number);
+AssertType(ship, "cargoCapacity", JsonValueKind.Number);
 
 Console.WriteLine("OK: RuntimeStateResponse contract shape is typed and stable.");
 

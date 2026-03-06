@@ -156,7 +156,7 @@ internal static class DslFuzzyMatcher
             }
         }
 
-        foreach (var itemId in state.Cargo.Keys)
+        foreach (var itemId in state.Ship.Cargo.Keys)
             AddAlias(map, itemId, itemId);
 
         foreach (var itemId in state.StorageItems.Keys)

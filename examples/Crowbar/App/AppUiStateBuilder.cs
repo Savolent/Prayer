@@ -29,7 +29,7 @@ public static class AppUiStateBuilder
         var pois = (state.POIs ?? Array.Empty<POIInfo>())
             .Select(p => $"- {p.Id} ({p.Type})")
             .ToArray();
-        var cargo = FormatCargo(state.Cargo);
+        var cargo = FormatCargo(state.Ship.Cargo);
         var missions = FormatMissions(state.ActiveMissions);
 
         return
@@ -38,10 +38,10 @@ SYSTEM: {state.System}
 POI: {state.CurrentPOI?.Id ?? "(unknown)"}
 DOCKED: {state.Docked}
 CREDITS: {state.Credits}
-FUEL: {state.Fuel}/{state.MaxFuel}
-HULL: {state.Hull}/{state.MaxHull}
-SHIELD: {state.Shield}/{state.MaxShield}
-CARGO: {state.CargoUsed}/{state.CargoCapacity}
+FUEL: {state.Ship.Fuel}/{state.Ship.MaxFuel}
+HULL: {state.Ship.Hull}/{state.Ship.MaxHull}
+SHIELD: {state.Ship.Shield}/{state.Ship.MaxShield}
+CARGO: {state.Ship.CargoUsed}/{state.Ship.CargoCapacity}
 
 POIS
 {(pois.Length == 0 ? "- (none)" : string.Join("\n", pois))}
@@ -55,7 +55,7 @@ ACTIVE MISSIONS
 
     private static string BuildTradeState(GameState state)
     {
-        var cargo = FormatCargo(state.Cargo);
+        var cargo = FormatCargo(state.Ship.Cargo);
         var storage = FormatCargo(state.StorageItems);
         var orders = FormatOrders(state.OwnBuyOrders, state.OwnSellOrders);
 

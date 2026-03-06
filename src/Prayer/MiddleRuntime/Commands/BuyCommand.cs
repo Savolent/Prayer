@@ -24,7 +24,7 @@ public class BuyCommand : AutoDockSingleTurnCommand, IDslCommandGrammar
         if (state.Credits <= 0)
             return false;
 
-        if (state.CargoCapacity - state.CargoUsed <= 0)
+        if (state.Ship.CargoCapacity - state.Ship.CargoUsed <= 0)
             return false;
 
         return market.SellOrders.Any(kvp => kvp.Value.Count > 0);
@@ -58,7 +58,7 @@ public class BuyCommand : AutoDockSingleTurnCommand, IDslCommandGrammar
         sellOrders ??= new List<MarketOrder>();
 
         int available = sellOrders.Sum(o => Math.Max(0, o.Quantity));
-        int cargoFree = Math.Max(0, state.CargoCapacity - state.CargoUsed);
+        int cargoFree = Math.Max(0, state.Ship.CargoCapacity - state.Ship.CargoUsed);
         int quantity = available > 0
             ? Math.Min(requested, Math.Min(available, cargoFree))
             : Math.Min(requested, cargoFree);

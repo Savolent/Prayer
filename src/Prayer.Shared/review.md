@@ -11,15 +11,17 @@
 - `src/Prayer/Core/State/GameStateRendering.cs:229`
 
 ### Medium: flat/ambiguous top-level shape
-**Status:** Still true.
+**Status:** Improved (partially resolved).
 
-Top-level state still mixes many parallel scalars (`Fuel/MaxFuel`, `Hull/MaxHull`, `Shield/MaxShield`, etc.) and naming like `System` vs `Systems`.
+Active-ship scalars were moved under `GameState.Ship` / `RuntimeGameStateDto.Ship`, which removed the largest flat cluster (`Fuel/MaxFuel`, `Hull/MaxHull`, `Shield/MaxShield`, `CargoUsed/CargoCapacity`, etc.) from the top level.
+
+Top-level naming ambiguity (`System` vs `Systems`) still exists and can be addressed in a separate rename pass.
 
 **Current refs**
 - `src/Prayer.Shared/GameStateModels.cs:12`
 - `src/Prayer.Shared/GameStateModels.cs:16`
-- `src/Prayer.Shared/GameStateModels.cs:36`
-- `src/Prayer.Shared/GameStateModels.cs:45`
+- `src/Prayer.Shared/GameStateModels.cs:22`
+- `src/Prayer.Shared/GameStateModels.cs:63`
 
 ### Medium: weakly typed semantic fields
 **Status:** Still true.

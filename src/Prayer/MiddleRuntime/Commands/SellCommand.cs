@@ -25,7 +25,7 @@ public class SellCommand : AutoDockMultiTurnCommand, IDslCommandGrammar
         if (!state.Docked || state.CurrentMarket == null)
             return false;
 
-        return state.Cargo.Any(kvp => kvp.Value.Quantity > 0 && IsSellable(state, kvp.Key));
+        return state.Ship.Cargo.Any(kvp => kvp.Value.Quantity > 0 && IsSellable(state, kvp.Key));
     }
 
     public override string BuildHelp(GameState state)
@@ -48,7 +48,7 @@ public class SellCommand : AutoDockMultiTurnCommand, IDslCommandGrammar
         }
 
         // --- MULTI-STEP MODE ---
-        _sellQueue = state.Cargo
+        _sellQueue = state.Ship.Cargo
             .Where(kvp => kvp.Value.Quantity > 0 && IsSellable(state, kvp.Key))
             .Select(kvp => kvp.Key)
             .ToList();
@@ -118,7 +118,7 @@ public class SellCommand : AutoDockMultiTurnCommand, IDslCommandGrammar
         GameState state,
         string item)
     {
-        if (!state.Cargo.TryGetValue(item, out var stack))
+        if (!state.Ship.Cargo.TryGetValue(item, out var stack))
             return null;
 
         if (stack.Quantity <= 0)

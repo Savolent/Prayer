@@ -455,17 +455,17 @@ public sealed class RuntimeHost : IRuntimeHost
 
     private async Task<GameState> TryAutoRefuelBetweenScriptStepsAsync(GameState state)
     {
-        if (state.Fuel >= state.MaxFuel || state.Credits <= 0)
+        if (state.Ship.Fuel >= state.Ship.MaxFuel || state.Credits <= 0)
             return state;
 
-        int fuelBefore = state.Fuel;
+        int fuelBefore = state.Ship.Fuel;
 
         try
         {
             await _transport.ExecuteCommandAsync("refuel", new { });
             var refreshed = await _stateProvider.GetLatestStateAsync();
 
-            if (refreshed.Fuel > fuelBefore)
+            if (refreshed.Ship.Fuel > fuelBefore)
                 _publishStatus($"[{_label}] Auto-refueled between script steps");
 
             return refreshed;

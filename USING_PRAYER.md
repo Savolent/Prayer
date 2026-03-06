@@ -89,6 +89,7 @@ Behavior:
 - `200` with state when version has advanced
 - `204` when timeout expires with no change
 - `X-Prayer-State-Version` response header contains current version
+- Active ship data is nested at `state.ship` (for example `state.ship.fuel`, `state.ship.cargoUsed`)
 
 Recommended loop shape:
 

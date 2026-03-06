@@ -10,7 +10,7 @@ public class RepairCommand : AutoDockSingleTurnCommand
 
     protected override bool IsAvailableWhenDocked(GameState state)
         => state.Docked &&
-           state.Hull < state.MaxHull;
+           state.Ship.Hull < state.Ship.MaxHull;
     public override string BuildHelp(GameState state)
         => "- repair → restore hull";
 

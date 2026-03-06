@@ -8,7 +8,6 @@ using System.Linq;
 
 public partial class GameState
 {
-
     public string System { get; set; } = "";
     public POIInfo CurrentPOI { get; set; } = null!;
 
@@ -20,21 +19,7 @@ public partial class GameState
     public EconomyDeal[] EconomyDeals { get; set; } = Array.Empty<EconomyDeal>();
     public OpenOrderInfo[] OwnBuyOrders { get; set; } = Array.Empty<OpenOrderInfo>();
     public OpenOrderInfo[] OwnSellOrders { get; set; } = Array.Empty<OpenOrderInfo>();
-    public Dictionary<string, ItemStack> Cargo { get; set; }
-        = new Dictionary<string, ItemStack>();
-
-    public string ShipName { get; set; } = "";
-    public string ShipClassId { get; set; } = "";
-    public int Armor { get; set; }
-    public int Speed { get; set; }
-    public int CpuUsed { get; set; }
-    public int CpuCapacity { get; set; }
-    public int PowerUsed { get; set; }
-    public int PowerCapacity { get; set; }
-    public int ModuleCount { get; set; }
-
-    public int Fuel { get; set; }
-    public int MaxFuel { get; set; }
+    public PlayerShip Ship { get; set; } = new();
     public int Credits { get; set; }
     public bool Docked { get; set; }
     public string[] ShipyardShowroomLines { get; set; } = Array.Empty<string>();
@@ -42,16 +27,8 @@ public partial class GameState
     public Catalogue ShipCatalogue { get; set; } = new();
     public OwnedShipInfo[] OwnedShips { get; set; } = Array.Empty<OwnedShipInfo>();
 
-    public int Hull { get; set; }
-    public int MaxHull { get; set; }
-    public int Shield { get; set; }
-    public int MaxShield { get; set; }
-
     public MissionInfo[] ActiveMissions { get; set; } = Array.Empty<MissionInfo>();
     public MissionInfo[] AvailableMissions { get; set; } = Array.Empty<MissionInfo>();
-
-    public int CargoUsed { get; set; }
-    public int CargoCapacity { get; set; }
     public GameNotification[] Notifications { get; set; } = Array.Empty<GameNotification>();
     public GameChatMessage[] ChatMessages { get; set; } = Array.Empty<GameChatMessage>();
     public MarketState? CurrentMarket
@@ -72,7 +49,7 @@ public partial class GameState
 
     public int GetQuantity(string itemId)
     {
-        return Cargo.TryGetValue(itemId, out var stack)
+        return Ship.Cargo.TryGetValue(itemId, out var stack)
             ? stack.Quantity
             : 0;
     }
@@ -81,6 +58,28 @@ public partial class GameState
     {
         return GetQuantity(itemId) >= minQuantity;
     }
+}
+
+public sealed class PlayerShip
+{
+    public string Name { get; set; } = "";
+    public string ClassId { get; set; } = "";
+    public int Armor { get; set; }
+    public int Speed { get; set; }
+    public int CpuUsed { get; set; }
+    public int CpuCapacity { get; set; }
+    public int PowerUsed { get; set; }
+    public int PowerCapacity { get; set; }
+    public int ModuleCount { get; set; }
+    public int Fuel { get; set; }
+    public int MaxFuel { get; set; }
+    public int Hull { get; set; }
+    public int MaxHull { get; set; }
+    public int Shield { get; set; }
+    public int MaxShield { get; set; }
+    public int CargoUsed { get; set; }
+    public int CargoCapacity { get; set; }
+    public Dictionary<string, ItemStack> Cargo { get; set; } = new();
 }
 
 public class GalaxyMapSnapshot

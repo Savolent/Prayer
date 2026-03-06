@@ -17,7 +17,7 @@ public class DepositItemsCommand : AutoDockSingleTurnCommand, IDslCommandGrammar
         });
 
     protected override bool IsAvailableWhenDocked(GameState state)
-        => state.Docked && state.Cargo.Count > 0;
+        => state.Docked && state.Ship.Cargo.Count > 0;
 
     public override string BuildHelp(GameState state)
         => "- stash <itemId|cargo> → move one stack or dump all cargo to storage";
@@ -32,7 +32,7 @@ public class DepositItemsCommand : AutoDockSingleTurnCommand, IDslCommandGrammar
 
         if (string.Equals(cmd.Arg1, "cargo", StringComparison.OrdinalIgnoreCase))
         {
-            var cargoItems = state.Cargo
+            var cargoItems = state.Ship.Cargo
                 .Where(kvp => kvp.Value.Quantity > 0)
                 .ToList();
 
@@ -77,7 +77,7 @@ public class DepositItemsCommand : AutoDockSingleTurnCommand, IDslCommandGrammar
             };
         }
 
-        if (!state.Cargo.TryGetValue(cmd.Arg1, out var stack) || stack.Quantity <= 0)
+        if (!state.Ship.Cargo.TryGetValue(cmd.Arg1, out var stack) || stack.Quantity <= 0)
             return null;
 
         JsonElement response = (await client.ExecuteCommandAsync(

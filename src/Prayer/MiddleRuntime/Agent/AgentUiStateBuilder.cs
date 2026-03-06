@@ -52,7 +52,7 @@ ACTIVE MISSIONS
     private static string BuildTradeUiState(GameState state)
     {
         var prices = state.BuildEstimatedItemPrices();
-        var cargo = GameState.StripMarkdown(GameState.FormatCargo(state.Cargo, prices));
+        var cargo = GameState.StripMarkdown(GameState.FormatCargo(state.Ship.Cargo, prices));
         var storage = state.StorageItems != null && state.StorageItems.Count > 0
             ? GameState.StripMarkdown(GameState.FormatCargo(state.StorageItems, prices))
             : "";
@@ -67,8 +67,8 @@ $@"CONTEXT: TRADE TERMINAL
 STATION: {state.CurrentPOI.Id}
 CREDITS: {state.Credits}
 STATION CREDITS: {state.StorageCredits}
-FUEL: {state.Fuel}/{state.MaxFuel}
-CARGO: {state.CargoUsed}/{state.CargoCapacity}
+FUEL: {state.Ship.Fuel}/{state.Ship.MaxFuel}
+CARGO: {state.Ship.CargoUsed}/{state.Ship.CargoCapacity}
 
 CARGO ITEMS
 {cargo}
@@ -80,7 +80,7 @@ ECONOMY
     private static string BuildShipyardUiState(GameState state)
     {
         var prices = state.BuildEstimatedItemPrices();
-        var cargo = GameState.StripMarkdown(GameState.FormatCargo(state.Cargo, prices));
+        var cargo = GameState.StripMarkdown(GameState.FormatCargo(state.Ship.Cargo, prices));
         var showroom = GameState.StripMarkdown(GameState.FormatShipyardShowroomLines(state.ShipyardShowroomLines));
         var listings = GameState.StripMarkdown(GameState.FormatShipyardShowroomLines(state.ShipyardListingLines));
         int currentPage = state.ShipCatalogue.Page ?? 1;
@@ -95,8 +95,8 @@ $@"CONTEXT: SHIPYARD
 STATION: {state.CurrentPOI.Id}
 CREDITS: {state.Credits}
 STATION CREDITS: {state.StorageCredits}
-FUEL: {state.Fuel}/{state.MaxFuel}
-CARGO: {state.CargoUsed}/{state.CargoCapacity}
+FUEL: {state.Ship.Fuel}/{state.Ship.MaxFuel}
+CARGO: {state.Ship.CargoUsed}/{state.Ship.CargoCapacity}
 
 SHOWROOM
 {showroom}

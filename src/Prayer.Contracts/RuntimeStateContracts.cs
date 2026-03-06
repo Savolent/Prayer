@@ -16,9 +16,24 @@ public sealed class RuntimeGameStateDto
     public RuntimeEconomyDealDto[] EconomyDeals { get; set; } = Array.Empty<RuntimeEconomyDealDto>();
     public RuntimeOpenOrderInfoDto[] OwnBuyOrders { get; set; } = Array.Empty<RuntimeOpenOrderInfoDto>();
     public RuntimeOpenOrderInfoDto[] OwnSellOrders { get; set; } = Array.Empty<RuntimeOpenOrderInfoDto>();
-    public Dictionary<string, RuntimeItemStackDto> Cargo { get; set; } = new(StringComparer.Ordinal);
-    public string ShipName { get; set; } = "";
-    public string ShipClassId { get; set; } = "";
+    public RuntimePlayerShipDto Ship { get; set; } = new();
+    public int Credits { get; set; }
+    public bool Docked { get; set; }
+    public string[] ShipyardShowroomLines { get; set; } = Array.Empty<string>();
+    public string[] ShipyardListingLines { get; set; } = Array.Empty<string>();
+    public RuntimeCatalogueDto ShipCatalogue { get; set; } = new();
+    public RuntimeOwnedShipInfoDto[] OwnedShips { get; set; } = Array.Empty<RuntimeOwnedShipInfoDto>();
+    public RuntimeMissionInfoDto[] ActiveMissions { get; set; } = Array.Empty<RuntimeMissionInfoDto>();
+    public RuntimeMissionInfoDto[] AvailableMissions { get; set; } = Array.Empty<RuntimeMissionInfoDto>();
+    public RuntimeGameNotificationDto[] Notifications { get; set; } = Array.Empty<RuntimeGameNotificationDto>();
+    public RuntimeGameChatMessageDto[] ChatMessages { get; set; } = Array.Empty<RuntimeGameChatMessageDto>();
+    public RuntimeMarketStateDto? CurrentMarket { get; set; }
+}
+
+public sealed class RuntimePlayerShipDto
+{
+    public string Name { get; set; } = "";
+    public string ClassId { get; set; } = "";
     public int Armor { get; set; }
     public int Speed { get; set; }
     public int CpuUsed { get; set; }
@@ -28,23 +43,13 @@ public sealed class RuntimeGameStateDto
     public int ModuleCount { get; set; }
     public int Fuel { get; set; }
     public int MaxFuel { get; set; }
-    public int Credits { get; set; }
-    public bool Docked { get; set; }
-    public string[] ShipyardShowroomLines { get; set; } = Array.Empty<string>();
-    public string[] ShipyardListingLines { get; set; } = Array.Empty<string>();
-    public RuntimeCatalogueDto ShipCatalogue { get; set; } = new();
-    public RuntimeOwnedShipInfoDto[] OwnedShips { get; set; } = Array.Empty<RuntimeOwnedShipInfoDto>();
     public int Hull { get; set; }
     public int MaxHull { get; set; }
     public int Shield { get; set; }
     public int MaxShield { get; set; }
-    public RuntimeMissionInfoDto[] ActiveMissions { get; set; } = Array.Empty<RuntimeMissionInfoDto>();
-    public RuntimeMissionInfoDto[] AvailableMissions { get; set; } = Array.Empty<RuntimeMissionInfoDto>();
     public int CargoUsed { get; set; }
     public int CargoCapacity { get; set; }
-    public RuntimeGameNotificationDto[] Notifications { get; set; } = Array.Empty<RuntimeGameNotificationDto>();
-    public RuntimeGameChatMessageDto[] ChatMessages { get; set; } = Array.Empty<RuntimeGameChatMessageDto>();
-    public RuntimeMarketStateDto? CurrentMarket { get; set; }
+    public Dictionary<string, RuntimeItemStackDto> Cargo { get; set; } = new(StringComparer.Ordinal);
 }
 
 public sealed class RuntimeGalaxyStateDto

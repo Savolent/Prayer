@@ -35,18 +35,18 @@ public partial class GameState
             ? $"\n### Economy\n{FormatEconomy(EconomyDeals, OwnBuyOrders, OwnSellOrders)}\n"
             : "";
 
-        int fuelPct = MaxFuel > 0 ? (Fuel * 100) / MaxFuel : 0;
-        int hullPct = MaxHull > 0 ? (Hull * 100) / MaxHull : 0;
-        int shieldPct = MaxShield > 0 ? (Shield * 100) / MaxShield : 0;
-        int cargoFree = Math.Max(0, CargoCapacity - CargoUsed);
-        int cargoPct = CargoCapacity > 0 ? (CargoUsed * 100) / CargoCapacity : 0;
+        int fuelPct = Ship.MaxFuel > 0 ? (Ship.Fuel * 100) / Ship.MaxFuel : 0;
+        int hullPct = Ship.MaxHull > 0 ? (Ship.Hull * 100) / Ship.MaxHull : 0;
+        int shieldPct = Ship.MaxShield > 0 ? (Ship.Shield * 100) / Ship.MaxShield : 0;
+        int cargoFree = Math.Max(0, Ship.CargoCapacity - Ship.CargoUsed);
+        int cargoPct = Ship.CargoCapacity > 0 ? (Ship.CargoUsed * 100) / Ship.CargoCapacity : 0;
         string poiDockState = CurrentPOI.HasBase
             ? (Docked ? " DOCKED" : " DOCKABLE")
             : "";
 
         var poisMarkdown = FormatPOIs(POIs);
         var systemsMarkdown = FormatList(Systems);
-        var cargoMarkdown = FormatCargo(Cargo, estimatedPrices);
+        var cargoMarkdown = FormatCargo(Ship.Cargo, estimatedPrices);
         var notificationsMarkdown = FormatNotifications(Notifications);
 
         return new RenderData
@@ -121,7 +121,7 @@ public partial class GameState
     internal string RenderTradeLlmMarkdown()
     {
         var estimatedPrices = BuildEstimatedItemPrices();
-        var cargo = FormatCargo(Cargo, estimatedPrices);
+        var cargo = FormatCargo(Ship.Cargo, estimatedPrices);
         var storage = StorageItems != null && StorageItems.Count > 0
             ? FormatCargo(StorageItems, estimatedPrices)
             : "";
@@ -136,8 +136,8 @@ $@"
 Active Context: `TradeState`
 Current Station: `{CurrentPOI.Id}`
 Credits: {Credits}
-Fuel: {Fuel}/{MaxFuel}
-Cargo: {CargoUsed}/{CargoCapacity}
+Fuel: {Ship.Fuel}/{Ship.MaxFuel}
+Cargo: {Ship.CargoUsed}/{Ship.CargoCapacity}
 
 ### Cargo
 {cargo}
@@ -151,15 +151,15 @@ Cargo: {CargoUsed}/{CargoCapacity}
     internal string RenderShipyardLlmMarkdown()
     {
         var estimatedPrices = BuildEstimatedItemPrices();
-        var cargo = FormatCargo(Cargo, estimatedPrices);
+        var cargo = FormatCargo(Ship.Cargo, estimatedPrices);
 
         return
 $@"
 Active Context: `ShipYardState`
 Current Station: `{CurrentPOI.Id}`
 Credits: {Credits}
-Fuel: {Fuel}/{MaxFuel}
-Cargo: {CargoUsed}/{CargoCapacity}
+Fuel: {Ship.Fuel}/{Ship.MaxFuel}
+Cargo: {Ship.CargoUsed}/{Ship.CargoCapacity}
 
 ### Showroom
 {FormatShipyardShowroomLines(ShipyardShowroomLines)}
@@ -176,22 +176,22 @@ Cargo: {CargoUsed}/{CargoCapacity}
     internal string RenderHangarLlmMarkdown()
     {
         var estimatedPrices = BuildEstimatedItemPrices();
-        var cargo = FormatCargo(Cargo, estimatedPrices);
+        var cargo = FormatCargo(Ship.Cargo, estimatedPrices);
 
         return
 $@"
 Active Context: `HangarState`
 Current Station: `{CurrentPOI.Id}`
 Credits: {Credits}
-Fuel: {Fuel}/{MaxFuel}
-Cargo: {CargoUsed}/{CargoCapacity}
+Fuel: {Ship.Fuel}/{Ship.MaxFuel}
+Cargo: {Ship.CargoUsed}/{Ship.CargoCapacity}
 
 ### Active Ship Stats
-Armor: {Armor}
-Speed: {Speed}
-CPU: {CpuUsed}/{CpuCapacity}
-Power: {PowerUsed}/{PowerCapacity}
-Modules: {ModuleCount}
+Armor: {Ship.Armor}
+Speed: {Ship.Speed}
+CPU: {Ship.CpuUsed}/{Ship.CpuCapacity}
+Power: {Ship.PowerUsed}/{Ship.PowerCapacity}
+Modules: {Ship.ModuleCount}
 
 ### Owned Ships
 {FormatOwnedShips(OwnedShips)}
@@ -237,12 +237,12 @@ Current POI (your location): `{CurrentPOI.Id}` ({CurrentPOI.Type}){r.PoiDockStat
 Credits: {Credits}
 
 ### Ship
-Name: {(string.IsNullOrWhiteSpace(ShipName) ? "-" : ShipName)}
-Class: {(string.IsNullOrWhiteSpace(ShipClassId) ? "-" : ShipClassId)}
-Fuel: {Fuel}/{MaxFuel} ({r.FuelPct}%)
-Hull: {Hull}/{MaxHull} ({r.HullPct}%)
-Shield: {Shield}/{MaxShield} ({r.ShieldPct}%)
-Cargo: {CargoUsed}/{CargoCapacity} ({r.CargoPct}% used, {r.CargoFree} free)
+Name: {(string.IsNullOrWhiteSpace(Ship.Name) ? "-" : Ship.Name)}
+Class: {(string.IsNullOrWhiteSpace(Ship.ClassId) ? "-" : Ship.ClassId)}
+Fuel: {Ship.Fuel}/{Ship.MaxFuel} ({r.FuelPct}%)
+Hull: {Ship.Hull}/{Ship.MaxHull} ({r.HullPct}%)
+Shield: {Ship.Shield}/{Ship.MaxShield} ({r.ShieldPct}%)
+Cargo: {Ship.CargoUsed}/{Ship.CargoCapacity} ({r.CargoPct}% used, {r.CargoFree} free)
 Current POI Online: {CurrentPOI.Online}
 Current POI Resources: {currentPoiResources}
 
@@ -275,12 +275,12 @@ CREDITS: {Credits}
 {stationCreditsLine}
 
 SHIP
-- Name: {(string.IsNullOrWhiteSpace(ShipName) ? "-" : ShipName)}
-- Class: {(string.IsNullOrWhiteSpace(ShipClassId) ? "-" : ShipClassId)}
-- Fuel: {Fuel}/{MaxFuel} ({r.FuelPct}%)
-- Hull: {Hull}/{MaxHull} ({r.HullPct}%)
-- Shield: {Shield}/{MaxShield} ({r.ShieldPct}%)
-- Cargo: {CargoUsed}/{CargoCapacity} ({r.CargoPct}% used, {r.CargoFree} free)
+- Name: {(string.IsNullOrWhiteSpace(Ship.Name) ? "-" : Ship.Name)}
+- Class: {(string.IsNullOrWhiteSpace(Ship.ClassId) ? "-" : Ship.ClassId)}
+- Fuel: {Ship.Fuel}/{Ship.MaxFuel} ({r.FuelPct}%)
+- Hull: {Ship.Hull}/{Ship.MaxHull} ({r.HullPct}%)
+- Shield: {Ship.Shield}/{Ship.MaxShield} ({r.ShieldPct}%)
+- Cargo: {Ship.CargoUsed}/{Ship.CargoCapacity} ({r.CargoPct}% used, {r.CargoFree} free)
 - POI Online: {CurrentPOI.Online}
 - POI Resources: {currentPoiResources}
 
@@ -403,7 +403,7 @@ CARGO
         var prices = new Dictionary<string, decimal>(StringComparer.Ordinal);
 
         var itemIds = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var item in Cargo.Keys)
+        foreach (var item in Ship.Cargo.Keys)
             itemIds.Add(item);
         foreach (var item in StorageItems.Keys)
             itemIds.Add(item);

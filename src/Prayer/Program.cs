@@ -192,8 +192,8 @@ app.MapGet("/api/runtime/sessions/{id}/snapshot", (string id, RuntimeSessionStor
             snapshot.CurrentScript),
         LatestSystem: state?.System,
         LatestPoi: state?.CurrentPOI.Id,
-        Fuel: state?.Fuel,
-        MaxFuel: state?.MaxFuel,
+        Fuel: state?.Ship.Fuel,
+        MaxFuel: state?.Ship.MaxFuel,
         Credits: state?.Credits,
         LastUpdatedUtc: session.LastUpdatedUtc));
 });

@@ -19,9 +19,27 @@ internal static class RuntimeStateContractMapper
             EconomyDeals = source.EconomyDeals.Select(Map).ToArray(),
             OwnBuyOrders = source.OwnBuyOrders.Select(Map).ToArray(),
             OwnSellOrders = source.OwnSellOrders.Select(Map).ToArray(),
-            Cargo = MapItemStackDictionary(source.Cargo),
-            ShipName = source.ShipName,
-            ShipClassId = source.ShipClassId,
+            Ship = Map(source.Ship),
+            Credits = source.Credits,
+            Docked = source.Docked,
+            ShipyardShowroomLines = source.ShipyardShowroomLines.ToArray(),
+            ShipyardListingLines = source.ShipyardListingLines.ToArray(),
+            ShipCatalogue = Map(source.ShipCatalogue),
+            OwnedShips = source.OwnedShips.Select(Map).ToArray(),
+            ActiveMissions = source.ActiveMissions.Select(Map).ToArray(),
+            AvailableMissions = source.AvailableMissions.Select(Map).ToArray(),
+            Notifications = source.Notifications.Select(Map).ToArray(),
+            ChatMessages = source.ChatMessages.Select(Map).ToArray(),
+            CurrentMarket = source.CurrentMarket == null ? null : Map(source.CurrentMarket)
+        };
+    }
+
+    private static Contracts.RuntimePlayerShipDto Map(PlayerShip source)
+    {
+        return new Contracts.RuntimePlayerShipDto
+        {
+            Name = source.Name,
+            ClassId = source.ClassId,
             Armor = source.Armor,
             Speed = source.Speed,
             CpuUsed = source.CpuUsed,
@@ -31,23 +49,13 @@ internal static class RuntimeStateContractMapper
             ModuleCount = source.ModuleCount,
             Fuel = source.Fuel,
             MaxFuel = source.MaxFuel,
-            Credits = source.Credits,
-            Docked = source.Docked,
-            ShipyardShowroomLines = source.ShipyardShowroomLines.ToArray(),
-            ShipyardListingLines = source.ShipyardListingLines.ToArray(),
-            ShipCatalogue = Map(source.ShipCatalogue),
-            OwnedShips = source.OwnedShips.Select(Map).ToArray(),
             Hull = source.Hull,
             MaxHull = source.MaxHull,
             Shield = source.Shield,
             MaxShield = source.MaxShield,
-            ActiveMissions = source.ActiveMissions.Select(Map).ToArray(),
-            AvailableMissions = source.AvailableMissions.Select(Map).ToArray(),
             CargoUsed = source.CargoUsed,
             CargoCapacity = source.CargoCapacity,
-            Notifications = source.Notifications.Select(Map).ToArray(),
-            ChatMessages = source.ChatMessages.Select(Map).ToArray(),
-            CurrentMarket = source.CurrentMarket == null ? null : Map(source.CurrentMarket)
+            Cargo = MapItemStackDictionary(source.Cargo)
         };
     }
 

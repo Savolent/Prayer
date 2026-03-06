@@ -167,7 +167,7 @@ public sealed class ScriptGenerationService
         var systemPrimary = state.Systems
             .Select(s => (Key: s, Label: s))
             .ToList();
-        var cargoPrimary = state.Cargo.Values
+        var cargoPrimary = state.Ship.Cargo.Values
             .OrderByDescending(c => c.Quantity)
             .Select(c => (Key: c.ItemId, Label: c.ItemId))
             .ToList();
@@ -359,7 +359,7 @@ public sealed class ScriptGenerationService
     {
         var aliases = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
 
-        foreach (var itemId in state.Cargo.Keys)
+        foreach (var itemId in state.Ship.Cargo.Keys)
             AddPromptAlias(aliases, itemId, itemId);
 
         if (state.StorageItems != null)

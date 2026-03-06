@@ -149,7 +149,7 @@ public class MineCommand : IMultiTurnCommand, IDslCommandGrammar
 
         if (_resourceMode)
         {
-            if (state.CargoUsed >= state.CargoCapacity)
+            if (state.Ship.CargoUsed >= state.Ship.CargoCapacity)
             {
                 _completionMessage = "Mining complete.";
                 return FinishWithCompletionMessage();
@@ -230,7 +230,7 @@ public class MineCommand : IMultiTurnCommand, IDslCommandGrammar
             return default;
         }
 
-        if (state.CargoUsed >= state.CargoCapacity)
+        if (state.Ship.CargoUsed >= state.Ship.CargoCapacity)
         {
             _completionMessage = "Mining complete.";
             return default;
@@ -467,7 +467,7 @@ public class MineCommand : IMultiTurnCommand, IDslCommandGrammar
     private bool IsClassicMineAvailable(GameState state)
         => !state.Docked &&
            state.CurrentPOI?.IsMiningTarget == true &&
-           state.CargoUsed < state.CargoCapacity;
+           state.Ship.CargoUsed < state.Ship.CargoCapacity;
 
     private void CaptureStopReasonFromResponse(JsonElement response)
     {

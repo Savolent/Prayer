@@ -17,7 +17,7 @@ public class WithdrawItemsCommand : AutoDockSingleTurnCommand, IDslCommandGramma
     protected override bool IsAvailableWhenDocked(GameState state)
         => state.Docked &&
            state.StorageItems.Count > 0 &&
-           state.CargoUsed < state.CargoCapacity;
+           state.Ship.CargoUsed < state.Ship.CargoCapacity;
 
     public override string BuildHelp(GameState state)
         => "- retrieve <itemId> [quantity:int] → move item from storage to cargo";
@@ -33,7 +33,7 @@ public class WithdrawItemsCommand : AutoDockSingleTurnCommand, IDslCommandGramma
         if (!state.StorageItems.TryGetValue(cmd.Arg1, out var stack) || stack.Quantity <= 0)
             return null;
 
-        int cargoFree = Math.Max(0, state.CargoCapacity - state.CargoUsed);
+        int cargoFree = Math.Max(0, state.Ship.CargoCapacity - state.Ship.CargoUsed);
         if (cargoFree <= 0)
         {
             return new CommandExecutionResult
