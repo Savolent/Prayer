@@ -5,6 +5,7 @@ using System.Linq;
 using System.Net;
 using System.Text;
 using System.Text.Json;
+using System.Threading.Tasks;
 using System.Threading.Channels;
 
 public sealed class HtmxBotWindow : IAppUi
@@ -184,17 +185,29 @@ public sealed class HtmxBotWindow : IAppUi
             if (ctx == null)
                 continue;
 
+            _ = Task.Run(() => HandleRequestSafely(ctx));
+        }
+    }
+
+    private void HandleRequestSafely(HttpListenerContext ctx)
+    {
+        try
+        {
+            HandleRequest(ctx);
+        }
+        catch (Exception ex)
+        {
+            WriteText(ctx.Response, $"Internal server error: {ex.Message}", "text/plain", 500);
+        }
+        finally
+        {
             try
             {
-                HandleRequest(ctx);
-            }
-            catch (Exception ex)
-            {
-                WriteText(ctx.Response, $"Internal server error: {ex.Message}", "text/plain", 500);
-            }
-            finally
-            {
                 ctx.Response.OutputStream.Close();
+            }
+            catch
+            {
+                // Listener may already be stopping.
             }
         }
     }

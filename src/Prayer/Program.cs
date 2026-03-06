@@ -762,6 +762,7 @@ internal sealed class PrayerRuntimeSession : IDisposable
             }
             case PrayerRuntimeCommandNames.Halt:
                 HaltNowQueue.Writer.TryWrite(true);
+                AppendStatus($"[{Label}] Halt requested");
                 (success, responseMessage) = (true, "halt requested");
                 break;
             case PrayerRuntimeCommandNames.SaveExample:

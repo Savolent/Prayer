@@ -23,6 +23,8 @@
   window._scriptSystemRegex = null;
   window._scriptPoiRegex = null;
   window._scriptSymbolRegex = null;
+  window._haltHighlightPending = false;
+  window._haltHighlightPendingUntil = 0;
 
   function refreshEditors() {
     if (window._scriptEditor) window._scriptEditor.refresh();
@@ -88,6 +90,15 @@
         var current = window._liveScriptEditor.getValue();
         if (current !== text) window._liveScriptEditor.setValue(text);
         var nextLine = (typeof state.currentScriptLine === 'number') ? state.currentScriptLine : null;
+        var now = Date.now();
+        if (window._haltHighlightPending) {
+          if (now < window._haltHighlightPendingUntil) {
+            nextLine = null;
+          } else {
+            window._haltHighlightPending = false;
+            window._haltHighlightPendingUntil = 0;
+          }
+        }
         if (window._liveScriptRunLineNumber !== nextLine) window.setLiveScriptRunLine(nextLine);
       })
       .catch(function () { });
@@ -486,6 +497,28 @@
     var path = (((e || {}).detail || {}).pathInfo || {}).requestPath || '';
     if (path.endsWith('/api/add-bot') || path.endsWith('/api/llm-select') || path === 'api/add-bot' || path === 'api/llm-select') {
       window.closeAllSidebarLayers();
+    }
+  });
+
+  document.body.addEventListener('htmx:beforeRequest', function (e) {
+    var path = (((e || {}).detail || {}).pathInfo || {}).requestPath || '';
+    if (path.endsWith('/api/halt') || path === 'api/halt') {
+      window._haltHighlightPending = true;
+      window._haltHighlightPendingUntil = Date.now() + 10000;
+      window.setLiveScriptRunLine(null);
+      return;
+    }
+
+    if (path.endsWith('/api/execute') ||
+      path.endsWith('/api/control-input') ||
+      path.endsWith('/api/prompt') ||
+      path.endsWith('/api/prompt-active-missions') ||
+      path === 'api/execute' ||
+      path === 'api/control-input' ||
+      path === 'api/prompt' ||
+      path === 'api/prompt-active-missions') {
+      window._haltHighlightPending = false;
+      window._haltHighlightPendingUntil = 0;
     }
   });
 

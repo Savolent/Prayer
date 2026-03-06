@@ -148,71 +148,89 @@ public sealed class RuntimeHost : IRuntimeHost
             {
                 try
                 {
-                    while (_controlInputReader.TryRead(out var newInput))
+                    if (await HandlePendingHaltsAsync(token))
+                        continue;
+
+                    if (_controlInputReader.TryRead(out var newInput))
                     {
                         if (string.IsNullOrWhiteSpace(newInput))
-                            continue;
-
-                        _agent.InterruptActiveCommand("Interrupted by control input update");
-                        var scriptState = _getLatestState() ?? await _stateProvider.GetLatestStateAsync();
-                        _setLatestState(scriptState);
-
-                        try
                         {
-                            _agent.SetScript(newInput, scriptState, preserveAssociatedPrompt: true);
-                            _agent.ActivateScriptControl();
-                            _publishStatus($"[{_label}] Script loaded and activated");
+                            // Skip empty updates quickly so halt can be serviced in the next loop pass.
                         }
-                        catch (FormatException ex)
+                        else
                         {
-                            _publishStatus($"[{_label}] Script parse error: {ex.Message}");
-                        }
+                            _agent.InterruptActiveCommand("Interrupted by control input update");
+                            var scriptState = _getLatestState() ?? await _stateProvider.GetLatestStateAsync();
+                            _setLatestState(scriptState);
 
-                        if (_getLatestState() != null)
-                            _publishSnapshot(scriptState);
+                            try
+                            {
+                                _agent.SetScript(newInput, scriptState, preserveAssociatedPrompt: true);
+                                _agent.ActivateScriptControl();
+                                _publishStatus($"[{_label}] Script loaded and activated");
+                            }
+                            catch (FormatException ex)
+                            {
+                                _publishStatus($"[{_label}] Script parse error: {ex.Message}");
+                            }
+
+                            if (_getLatestState() != null)
+                                _publishSnapshot(scriptState);
+                        }
                     }
 
-                    while (_generateScriptReader.TryRead(out var generationInput))
+                    if (await HandlePendingHaltsAsync(token))
+                        continue;
+
+                    if (_generateScriptReader.TryRead(out var generationInput))
                     {
                         if (string.IsNullOrWhiteSpace(generationInput))
-                            continue;
-
-                        if (generationInput.Contains("(no active mission objectives)", StringComparison.OrdinalIgnoreCase))
                         {
-                            _publishStatus($"[{_label}] No active mission objectives available to generate a script.");
-                            continue;
+                            // Skip empty generation requests quickly so halt can be serviced in the next loop pass.
                         }
-
-                        _agent.InterruptActiveCommand("Interrupted by script generation request");
-                        _publishStatus($"[{_label}] Generating script");
-
-                        var scriptState = _getLatestState() ?? await _stateProvider.GetLatestStateAsync();
-                        _setLatestState(scriptState);
-
-                        try
+                        else
                         {
-                            var generatedScript = await _agent.GenerateScriptFromUserInputAsync(
-                                generationInput,
-                                scriptState,
-                                maxAttempts: _scriptGenerationMaxAttempts);
-                            _agent.ActivateScriptControl();
-                            _agent.SetScript(generatedScript, scriptState);
-                            _publishStatus($"[{_label}] Generated script loaded and activated");
-                        }
-                        catch (FormatException ex)
-                        {
-                            _publishStatus($"[{_label}] Generated script parse error: {ex.Message}");
-                        }
-                        catch (Exception ex)
-                        {
-                            _publishStatus($"[{_label}] Script generation failed: {ex.Message}");
-                        }
+                            if (generationInput.Contains("(no active mission objectives)", StringComparison.OrdinalIgnoreCase))
+                            {
+                                _publishStatus($"[{_label}] No active mission objectives available to generate a script.");
+                            }
+                            else
+                            {
+                                _agent.InterruptActiveCommand("Interrupted by script generation request");
+                                _publishStatus($"[{_label}] Generating script");
 
-                        if (_getLatestState() != null)
-                            _publishSnapshot(scriptState);
+                                var scriptState = _getLatestState() ?? await _stateProvider.GetLatestStateAsync();
+                                _setLatestState(scriptState);
+
+                                try
+                                {
+                                    var generatedScript = await _agent.GenerateScriptFromUserInputAsync(
+                                        generationInput,
+                                        scriptState,
+                                        maxAttempts: _scriptGenerationMaxAttempts);
+                                    _agent.ActivateScriptControl();
+                                    _agent.SetScript(generatedScript, scriptState);
+                                    _publishStatus($"[{_label}] Generated script loaded and activated");
+                                }
+                                catch (FormatException ex)
+                                {
+                                    _publishStatus($"[{_label}] Generated script parse error: {ex.Message}");
+                                }
+                                catch (Exception ex)
+                                {
+                                    _publishStatus($"[{_label}] Script generation failed: {ex.Message}");
+                                }
+
+                                if (_getLatestState() != null)
+                                    _publishSnapshot(scriptState);
+                            }
+                        }
                     }
 
-                    while (_saveExampleReader.TryRead(out _))
+                    if (await HandlePendingHaltsAsync(token))
+                        continue;
+
+                    if (_saveExampleReader.TryRead(out _))
                     {
                         var saveResult = await _agent.AddCurrentScriptAsExampleAsync();
                         _publishStatus($"[{_label}] {saveResult.Message}");
@@ -222,26 +240,8 @@ public sealed class RuntimeHost : IRuntimeHost
                             _publishSnapshot(latestState);
                     }
 
-                    while (_haltNowReader.TryRead(out _))
-                    {
-                        _agent.InterruptActiveCommand("Interrupted by user halt");
-
-                        var haltState = _getLatestState() ?? await _stateProvider.GetLatestStateAsync();
-                        _setLatestState(haltState);
-
-                        try
-                        {
-                            _agent.SetScript(string.Empty, haltState, preserveAssociatedPrompt: true);
-                        }
-                        catch
-                        {
-                            // Never block force-halt because script clear failed.
-                        }
-
-                        _agent.Halt("Halted by user");
-                        _publishStatus($"[{_label}] Halted by user");
-                        _publishSnapshot(haltState);
-                    }
+                    if (await HandlePendingHaltsAsync(token))
+                        continue;
 
                     if (_agent.IsHalted)
                     {
@@ -485,5 +485,34 @@ public sealed class RuntimeHost : IRuntimeHost
             return $"{result.Action} {result.Arg1}";
 
         return result.Action;
+    }
+
+    private async Task<bool> HandlePendingHaltsAsync(CancellationToken token)
+    {
+        bool handled = false;
+        while (_haltNowReader.TryRead(out _))
+        {
+            handled = true;
+            _agent.InterruptActiveCommand("Interrupted by user halt");
+
+            var haltState = _getLatestState() ?? await _stateProvider.GetLatestStateAsync();
+            _setLatestState(haltState);
+
+            try
+            {
+                _agent.SetScript(string.Empty, haltState, preserveAssociatedPrompt: true);
+            }
+            catch
+            {
+                // Never block force-halt because script clear failed.
+            }
+
+            _agent.Halt("Halted by user");
+            _publishStatus($"[{_label}] Halted by user");
+            _publishSnapshot(haltState);
+            token.ThrowIfCancellationRequested();
+        }
+
+        return handled;
     }
 }
