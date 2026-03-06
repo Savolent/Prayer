@@ -588,14 +588,10 @@ class Program
                     }
 
                     ui.Render(
-                        snapshot.SpaceStateMarkdown,
                         snapshot.SpaceModel,
                         snapshot.SpaceConnectedSystems,
-                        snapshot.TradeStateMarkdown,
                         snapshot.TradeModel,
-                        snapshot.ShipyardStateMarkdown,
                         snapshot.ShipyardModel,
-                        snapshot.MissionsStateMarkdown,
                         snapshot.CatalogModel,
                         snapshot.ActiveMissionPrompts,
                         snapshot.AvailableMissionPrompts,

@@ -13,14 +13,10 @@ public interface IAppUi
     void SetProviderModels(string provider, IReadOnlyList<string> models);
 
     void Render(
-        string spaceStateMarkdown,
         SpaceUiModel? spaceModel,
         IReadOnlyList<string> spaceConnectedSystems,
-        string? tradeStateMarkdown,
         TradeUiModel? tradeModel,
-        string? shipyardStateMarkdown,
         ShipyardUiModel? shipyardModel,
-        string? missionsStateMarkdown,
         CatalogUiModel? catalogModel,
         IReadOnlyList<MissionPromptOption> activeMissionPrompts,
         IReadOnlyList<MissionPromptOption> availableMissionPrompts,

@@ -33,12 +33,8 @@ public sealed partial class HtmxBotWindow : IAppUi
     private readonly Dictionary<string, IReadOnlyList<string>> _modelsByProvider =
         new(StringComparer.OrdinalIgnoreCase);
     private UiSnapshot _snapshot = new(
-        "No bot logged in. Use Add Bot below.",
         null,
         Array.Empty<string>(),
-        null,
-        null,
-        null,
         null,
         null,
         null,
@@ -125,14 +121,10 @@ public sealed partial class HtmxBotWindow : IAppUi
     }
 
     public void Render(
-        string spaceStateMarkdown,
         SpaceUiModel? spaceModel,
         IReadOnlyList<string> spaceConnectedSystems,
-        string? tradeStateMarkdown,
         TradeUiModel? tradeModel,
-        string? shipyardStateMarkdown,
         ShipyardUiModel? shipyardModel,
-        string? missionsStateMarkdown,
         CatalogUiModel? catalogModel,
         IReadOnlyList<MissionPromptOption> activeMissionPrompts,
         IReadOnlyList<MissionPromptOption> availableMissionPrompts,
@@ -147,14 +139,10 @@ public sealed partial class HtmxBotWindow : IAppUi
         lock (_lock)
         {
             _snapshot = new UiSnapshot(
-                spaceStateMarkdown,
                 spaceModel,
                 spaceConnectedSystems,
-                tradeStateMarkdown,
                 tradeModel,
-                shipyardStateMarkdown,
                 shipyardModel,
-                missionsStateMarkdown,
                 catalogModel,
                 activeMissionPrompts,
                 availableMissionPrompts,
@@ -588,7 +576,7 @@ public sealed partial class HtmxBotWindow : IAppUi
                 sb.Append(ShipyardTabRenderer.Build(snapshot.ShipyardModel));
                 break;
             case "missions":
-                sb.Append(MissionsTabRenderer.Build(snapshot.MissionsStateMarkdown, snapshot.ActiveMissionPrompts, snapshot.AvailableMissionPrompts));
+                sb.Append(MissionsTabRenderer.Build(snapshot.ActiveMissionPrompts, snapshot.AvailableMissionPrompts));
                 break;
             case "catalog":
                 sb.Append(CatalogTabRenderer.Build(snapshot.CatalogModel));

@@ -1,14 +1,10 @@
 using System.Collections.Generic;
 
 public sealed record UiSnapshot(
-    string SpaceStateMarkdown,
     SpaceUiModel? SpaceModel,
     IReadOnlyList<string> SpaceConnectedSystems,
-    string? TradeStateMarkdown,
     TradeUiModel? TradeModel,
-    string? ShipyardStateMarkdown,
     ShipyardUiModel? ShipyardModel,
-    string? MissionsStateMarkdown,
     CatalogUiModel? CatalogModel,
     IReadOnlyList<MissionPromptOption> ActiveMissionPrompts,
     IReadOnlyList<MissionPromptOption> AvailableMissionPrompts,

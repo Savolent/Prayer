@@ -7,7 +7,6 @@ using System.Text;
 internal static class MissionsTabRenderer
 {
     public static string Build(
-        string? missionsStateMarkdown,
         IReadOnlyList<MissionPromptOption> activeMissionPrompts,
         IReadOnlyList<MissionPromptOption> availableMissionPrompts)
     {
@@ -17,7 +16,6 @@ internal static class MissionsTabRenderer
         var availableOptions = (availableMissionPrompts ?? Array.Empty<MissionPromptOption>())
             .Where(m => m != null)
             .ToList();
-        var availableFallback = ParseAvailableMissions(missionsStateMarkdown);
 
         var sb = new StringBuilder();
         sb.AppendLine("<section class='space-page'>");
@@ -26,7 +24,7 @@ internal static class MissionsTabRenderer
         sb.Append("<div class='space-subtitle'>Active ")
             .Append(active.Count)
             .Append(" • Available ")
-            .Append(availableOptions.Count > 0 ? availableOptions.Count : availableFallback.Count)
+            .Append(availableOptions.Count)
             .AppendLine("</div>");
         sb.AppendLine("</div>");
 
@@ -75,86 +73,19 @@ internal static class MissionsTabRenderer
 
         sb.AppendLine("<section class='space-panel'>");
         sb.AppendLine("<div class='space-panel-title'>Available Missions</div>");
-        if (availableOptions.Count == 0 && availableFallback.Count == 0)
+        if (availableOptions.Count == 0)
         {
             sb.AppendLine("<div class='small'>(none)</div>");
         }
-        else if (availableOptions.Count > 0)
+        else
         {
             foreach (var mission in availableOptions)
                 AppendAvailableMissionCard(sb, mission);
-        }
-        else
-        {
-            foreach (var mission in availableFallback)
-            {
-                var (title, body) = SplitMissionLine(mission);
-                sb.Append("<div class='mission-item'><div class='mission-title'>")
-                    .Append(E(title))
-                    .AppendLine("</div>");
-                if (!string.IsNullOrWhiteSpace(body))
-                {
-                    sb.Append("<div class='mission-body'>")
-                        .Append(E(body))
-                        .AppendLine("</div>");
-                }
-                sb.AppendLine("</div>");
-            }
         }
         sb.AppendLine("</section>");
         sb.AppendLine("</div>");
         sb.AppendLine("</section>");
         return sb.ToString();
-    }
-
-    private static List<string> ParseAvailableMissions(string? markdown)
-    {
-        var result = new List<string>();
-        if (string.IsNullOrWhiteSpace(markdown))
-            return result;
-
-        var lines = markdown.Replace("\r\n", "\n").Split('\n');
-        bool inAvailable = false;
-        foreach (var raw in lines)
-        {
-            var line = raw.Trim();
-            if (line.Equals("AVAILABLE MISSIONS", StringComparison.OrdinalIgnoreCase))
-            {
-                inAvailable = true;
-                continue;
-            }
-
-            if (!inAvailable)
-                continue;
-
-            if (!line.StartsWith("- ", StringComparison.Ordinal))
-                continue;
-
-            var mission = line[2..].Trim();
-            if (mission.Length == 0 || mission.Equals("(none)", StringComparison.OrdinalIgnoreCase))
-                continue;
-
-            result.Add(mission);
-        }
-
-        return result;
-    }
-
-    private static (string Title, string Body) SplitMissionLine(string mission)
-    {
-        var value = (mission ?? string.Empty).Trim();
-        if (value.Length == 0)
-            return ("(unknown mission)", string.Empty);
-
-        var separatorIndex = value.IndexOf(':');
-        if (separatorIndex <= 0 || separatorIndex >= value.Length - 1)
-            return (value, string.Empty);
-
-        var title = value[..separatorIndex].Trim();
-        var body = value[(separatorIndex + 1)..].Trim();
-        return (
-            string.IsNullOrWhiteSpace(title) ? value : title,
-            body);
     }
 
     private static void AppendAvailableMissionCard(StringBuilder sb, MissionPromptOption mission)

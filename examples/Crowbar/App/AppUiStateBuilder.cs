@@ -5,56 +5,19 @@ using System.Linq;
 public static class AppUiStateBuilder
 {
     public static (
-        string SpaceStateMarkdown,
         SpaceUiModel SpaceModel,
-        string? TradeStateMarkdown,
         TradeUiModel? TradeModel,
-        string? ShipyardStateMarkdown,
         ShipyardUiModel? ShipyardModel,
-        string? MissionsStateMarkdown,
         CatalogUiModel? CatalogModel)
         BuildUiState(GameState state)
     {
-        var space = BuildSpaceState(state);
         var spaceModel = BuildSpaceModel(state);
-        var trade = state.Docked ? BuildTradeState(state) : null;
         var tradeModel = state.Docked ? BuildTradeModel(state) : null;
-        var shipyard = state.Docked && string.Equals(state.CurrentPOI?.Type, "station", StringComparison.Ordinal)
-            ? BuildShipyardState(state)
-            : null;
         var shipyardModel = state.Docked && string.Equals(state.CurrentPOI?.Type, "station", StringComparison.Ordinal)
             ? BuildShipyardModel(state)
             : null;
-        var missions = state.Docked && string.Equals(state.CurrentPOI?.Type, "station", StringComparison.Ordinal)
-            ? BuildMissionsState(state)
-            : null;
         var catalog = BuildCatalogModel(state);
-        return (space, spaceModel, trade, tradeModel, shipyard, shipyardModel, missions, catalog);
-    }
-
-    private static string BuildSpaceState(GameState state)
-    {
-        var pois = (state.POIs ?? Array.Empty<POIInfo>())
-            .Select(p => $"- {p.Id} ({p.Type})")
-            .ToArray();
-        var cargo = FormatCargoForSpace(state, state.Ship.Cargo);
-
-        return
-$@"CONTEXT: SPACE
-SYSTEM: {state.System}
-POI: {state.CurrentPOI?.Id ?? "(unknown)"}
-DOCKED: {state.Docked}
-CREDITS: {state.Credits}
-FUEL: {state.Ship.Fuel}/{state.Ship.MaxFuel}
-HULL: {state.Ship.Hull}/{state.Ship.MaxHull}
-SHIELD: {state.Ship.Shield}/{state.Ship.MaxShield}
-CARGO: {state.Ship.CargoUsed}/{state.Ship.CargoCapacity}
-
-POIS
-{(pois.Length == 0 ? "- (none)" : string.Join("\n", pois))}
-
-CARGO ITEMS
-{cargo}";
+        return (spaceModel, tradeModel, shipyardModel, catalog);
     }
 
     private static SpaceUiModel BuildSpaceModel(GameState state)
@@ -89,28 +52,6 @@ CARGO ITEMS
             $"{state.Ship.CargoUsed}/{state.Ship.CargoCapacity}",
             pois,
             cargoItems);
-    }
-
-    private static string BuildTradeState(GameState state)
-    {
-        var cargo = FormatCargo(state.Ship.Cargo);
-        var storage = FormatCargo(state.StorageItems);
-        var orders = FormatOrders(state.OwnBuyOrders, state.OwnSellOrders);
-
-        return
-$@"CONTEXT: TRADE TERMINAL
-STATION: {state.CurrentPOI?.Id ?? "(unknown)"}
-CREDITS: {state.Credits}
-STATION CREDITS: {state.StorageCredits}
-
-CARGO
-{cargo}
-
-STORAGE
-{storage}
-
-OPEN ORDERS
-{orders}";
     }
 
     private static TradeUiModel BuildTradeModel(GameState state)
@@ -200,25 +141,6 @@ OPEN ORDERS
             sellOrders);
     }
 
-    private static string BuildShipyardState(GameState state)
-    {
-        var showroom = state.ShipyardShowroom?.Length > 0
-            ? string.Join("\n", state.ShipyardShowroom.Select(FormatShowroomLine))
-            : "- (none)";
-        var listings = state.ShipyardListings?.Length > 0
-            ? string.Join("\n", state.ShipyardListings.Select(FormatListingLine))
-            : "- (none)";
-
-        return
-$@"CONTEXT: SHIPYARD
-STATION: {state.CurrentPOI?.Id ?? "(unknown)"}
-SHOWROOM
-{showroom}
-
-PLAYER LISTINGS
-{listings}";
-    }
-
     private static ShipyardUiModel BuildShipyardModel(GameState state)
     {
         var showroom = (state.ShipyardShowroom ?? Array.Empty<ShipyardShowroomEntry>())
@@ -293,15 +215,6 @@ PLAYER LISTINGS
             catalogShips);
     }
 
-    private static string BuildMissionsState(GameState state)
-    {
-        return
-$@"CONTEXT: MISSIONS
-STATION: {state.CurrentPOI?.Id ?? "(unknown)"}
-AVAILABLE MISSIONS
-{FormatMissions(state.AvailableMissions)}";
-    }
-
     private static CatalogUiModel BuildCatalogModel(GameState state)
     {
         var itemEntries = (state.Galaxy?.Catalog?.ItemsById?.Values ?? Enumerable.Empty<CatalogueEntry>())
@@ -333,68 +246,6 @@ AVAILABLE MISSIONS
             .ToArray();
 
         return new CatalogUiModel(itemEntries, shipEntries);
-    }
-
-    private static string FormatCargo(Dictionary<string, ItemStack>? cargo)
-    {
-        if (cargo == null || cargo.Count == 0)
-            return "- (empty)";
-
-        return string.Join(
-            "\n",
-            cargo.Values
-                .OrderBy(v => v.ItemId, StringComparer.OrdinalIgnoreCase)
-                .Select(v => $"- {v.ItemId} x{v.Quantity}"));
-    }
-
-    private static string FormatCargoForSpace(GameState state, Dictionary<string, ItemStack>? cargo)
-    {
-        if (cargo == null || cargo.Count == 0)
-            return "- (empty)";
-
-        return string.Join(
-            "\n",
-            cargo.Values
-                .OrderBy(v => v.ItemId, StringComparer.OrdinalIgnoreCase)
-                .Select(v =>
-                {
-                    var itemId = v.ItemId ?? string.Empty;
-                    var medianPrice = ResolveMedianBidPrice(state, itemId) ?? ResolveMedianAskPrice(state, itemId);
-                    var suffix = medianPrice.HasValue && medianPrice.Value > 0m
-                        ? $" {Math.Round(medianPrice.Value, 2):0.##}cr"
-                        : string.Empty;
-                    return $"- {itemId} x{v.Quantity}{suffix}";
-                }));
-    }
-
-    private static string FormatMissions(MissionInfo[]? missions)
-    {
-        if (missions == null || missions.Length == 0)
-            return "- (none)";
-
-        return string.Join(
-            "\n",
-            missions.Select(m =>
-            {
-                var name = !string.IsNullOrWhiteSpace(m.Title)
-                    ? m.Title
-                    : (!string.IsNullOrWhiteSpace(m.MissionId) ? m.MissionId : m.Id);
-                var progress = !string.IsNullOrWhiteSpace(m.ProgressText)
-                    ? m.ProgressText
-                    : m.ObjectivesSummary;
-                return $"- {name}: {progress}";
-            }));
-    }
-
-    private static string FormatOrders(OpenOrderInfo[]? buy, OpenOrderInfo[]? sell)
-    {
-        var lines = new List<string>();
-        foreach (var order in buy ?? Array.Empty<OpenOrderInfo>())
-            lines.Add($"- BUY {order.ItemId} qty={order.Quantity} price={order.PriceEach}");
-        foreach (var order in sell ?? Array.Empty<OpenOrderInfo>())
-            lines.Add($"- SELL {order.ItemId} qty={order.Quantity} price={order.PriceEach}");
-
-        return lines.Count == 0 ? "- (none)" : string.Join("\n", lines);
     }
 
     private static string FormatShowroomLine(ShipyardShowroomEntry entry)

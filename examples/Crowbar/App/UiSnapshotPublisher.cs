@@ -49,12 +49,8 @@ public sealed class UiSnapshotPublisher
         var activeBotId = _getActiveBotId();
         LogBotTabsIfChanged("publish_no_bot_snapshot", tabs, activeBotId);
         _uiWriter.TryWrite(new UiSnapshot(
-            message ?? "No bot logged in. Use + to add one.",
             null,
             Array.Empty<string>(),
-            null,
-            null,
-            null,
             null,
             null,
             null,
@@ -96,14 +92,10 @@ public sealed class UiSnapshotPublisher
         var availableMissionPrompts = MissionPromptBuilder.BuildAvailableOptions(snapshot.State);
         LogBotTabsIfChanged("publish_prayer_snapshot", tabs, activeBotId);
         _uiWriter.TryWrite(new UiSnapshot(
-            uiState.SpaceStateMarkdown,
             uiState.SpaceModel,
             snapshot.State.Systems ?? Array.Empty<string>(),
-            uiState.TradeStateMarkdown,
             uiState.TradeModel,
-            uiState.ShipyardStateMarkdown,
             uiState.ShipyardModel,
-            uiState.MissionsStateMarkdown,
             uiState.CatalogModel,
             missionPrompts,
             availableMissionPrompts,
