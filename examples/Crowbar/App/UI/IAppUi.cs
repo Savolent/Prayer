@@ -14,6 +14,7 @@ public interface IAppUi
 
     void Render(
         string spaceStateMarkdown,
+        IReadOnlyList<string> spaceConnectedSystems,
         string? tradeStateMarkdown,
         string? shipyardStateMarkdown,
         string? cantinaStateMarkdown,

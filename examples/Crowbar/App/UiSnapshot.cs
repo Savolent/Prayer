@@ -2,6 +2,7 @@ using System.Collections.Generic;
 
 public sealed record UiSnapshot(
     string SpaceStateMarkdown,
+    IReadOnlyList<string> SpaceConnectedSystems,
     string? TradeStateMarkdown,
     string? ShipyardStateMarkdown,
     string? CantinaStateMarkdown,

@@ -589,6 +589,7 @@ class Program
 
                     ui.Render(
                         snapshot.SpaceStateMarkdown,
+                        snapshot.SpaceConnectedSystems,
                         snapshot.TradeStateMarkdown,
                         snapshot.ShipyardStateMarkdown,
                         snapshot.CantinaStateMarkdown,

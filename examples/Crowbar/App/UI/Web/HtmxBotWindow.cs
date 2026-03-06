@@ -34,6 +34,7 @@ public sealed class HtmxBotWindow : IAppUi
         new(StringComparer.OrdinalIgnoreCase);
     private UiSnapshot _snapshot = new(
         "No bot logged in. Use Add Bot below.",
+        Array.Empty<string>(),
         null,
         null,
         null,
@@ -121,6 +122,7 @@ public sealed class HtmxBotWindow : IAppUi
 
     public void Render(
         string spaceStateMarkdown,
+        IReadOnlyList<string> spaceConnectedSystems,
         string? tradeStateMarkdown,
         string? shipyardStateMarkdown,
         string? cantinaStateMarkdown,
@@ -138,6 +140,7 @@ public sealed class HtmxBotWindow : IAppUi
         {
             _snapshot = new UiSnapshot(
                 spaceStateMarkdown,
+                spaceConnectedSystems,
                 tradeStateMarkdown,
                 shipyardStateMarkdown,
                 cantinaStateMarkdown,
@@ -431,6 +434,34 @@ public sealed class HtmxBotWindow : IAppUi
             return;
         }
 
+        if (req.HttpMethod == "POST" && path == "/api/go-target")
+        {
+            var form = ReadForm(req);
+            var target = (GetValue(form, "target") ?? "").Trim();
+            if (string.IsNullOrWhiteSpace(target))
+            {
+                WriteText(ctx.Response, "Target is required.", "text/plain; charset=utf-8", 400);
+                return;
+            }
+
+            string? activeBotId;
+            lock (_lock) activeBotId = _snapshot.ActiveBotId;
+            if (!string.IsNullOrWhiteSpace(activeBotId))
+            {
+                _runtimeCommandWriter?.TryWrite(new RuntimeCommandRequest(
+                    activeBotId!,
+                    RuntimeCommandNames.SetScript,
+                    $"go {target};"));
+
+                _runtimeCommandWriter?.TryWrite(new RuntimeCommandRequest(
+                    activeBotId!,
+                    RuntimeCommandNames.ExecuteScript));
+            }
+
+            WriteNoContent(ctx.Response);
+            return;
+        }
+
         if (req.HttpMethod == "POST" && path == "/api/halt")
         {
             string? targetBotId;
@@ -675,10 +706,111 @@ public sealed class HtmxBotWindow : IAppUi
                 AppendCatalogHtml(sb, snapshot.CatalogStateMarkdown);
                 break;
             default:
-                sb.Append("<pre>").Append(E(snapshot.SpaceStateMarkdown)).AppendLine("</pre>");
+                AppendSpaceHtml(sb, snapshot.SpaceStateMarkdown, snapshot.SpaceConnectedSystems);
                 break;
         }
         return sb.ToString();
+    }
+
+    private void AppendSpaceHtml(StringBuilder sb, string spaceStateMarkdown, IReadOnlyList<string> connectedSystems)
+    {
+        var (currentSystem, pois) = ParseSpaceTargets(spaceStateMarkdown);
+        var normalizedConnected = (connectedSystems ?? Array.Empty<string>())
+            .Where(s => !string.IsNullOrWhiteSpace(s))
+            .Where(s => !string.Equals(s, currentSystem, StringComparison.OrdinalIgnoreCase))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(s => s, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        sb.AppendLine("<div class='list'>");
+        sb.Append("<div><strong>SYSTEM:</strong> ").Append(E(string.IsNullOrWhiteSpace(currentSystem) ? "(unknown)" : currentSystem)).AppendLine("</div>");
+
+        sb.AppendLine("<div class='space-nav-group'><div class='small'>POIs</div>");
+        if (pois.Count == 0)
+        {
+            sb.AppendLine("<div class='small'>(none)</div>");
+        }
+        else
+        {
+            foreach (var poi in pois)
+                AppendGoLink(sb, poi.Target, poi.Label);
+        }
+        sb.AppendLine("</div>");
+
+        sb.AppendLine("<div class='space-nav-group'><div class='small'>Connected Systems</div>");
+        if (normalizedConnected.Count == 0)
+        {
+            sb.AppendLine("<div class='small'>(none)</div>");
+        }
+        else
+        {
+            foreach (var system in normalizedConnected)
+                AppendGoLink(sb, system, system);
+        }
+        sb.AppendLine("</div>");
+        sb.AppendLine("</div>");
+
+        sb.Append("<pre>").Append(E(spaceStateMarkdown)).AppendLine("</pre>");
+    }
+
+    private static void AppendGoLink(StringBuilder sb, string target, string label)
+    {
+        sb.Append("<form class='inline-go-form' hx-post='api/go-target' hx-swap='none'>")
+            .Append("<input type='hidden' name='target' value='").Append(E(target)).Append("'>")
+            .Append("<button type='submit' class='go-link'>").Append(E(label)).AppendLine("</button></form>");
+    }
+
+    private static (string CurrentSystem, List<(string Target, string Label)> Pois) ParseSpaceTargets(string markdown)
+    {
+        var currentSystem = string.Empty;
+        var pois = new List<(string Target, string Label)>();
+
+        var lines = (markdown ?? string.Empty).Replace("\r\n", "\n").Split('\n');
+        bool inPoisSection = false;
+
+        foreach (var raw in lines)
+        {
+            var line = raw.Trim();
+            if (line.StartsWith("SYSTEM:", StringComparison.OrdinalIgnoreCase))
+            {
+                currentSystem = line["SYSTEM:".Length..].Trim();
+                continue;
+            }
+
+            if (line.Equals("POIS", StringComparison.OrdinalIgnoreCase))
+            {
+                inPoisSection = true;
+                continue;
+            }
+
+            if (inPoisSection &&
+                (line.Equals("CARGO ITEMS", StringComparison.OrdinalIgnoreCase) ||
+                 line.Equals("ACTIVE MISSIONS", StringComparison.OrdinalIgnoreCase)))
+            {
+                inPoisSection = false;
+                continue;
+            }
+
+            if (!inPoisSection || !line.StartsWith("- ", StringComparison.Ordinal))
+                continue;
+
+            var label = line[2..].Trim();
+            if (string.IsNullOrWhiteSpace(label) || label.Equals("(none)", StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            var target = label;
+            int idx = label.IndexOf(" (", StringComparison.Ordinal);
+            if (idx > 0)
+                target = label[..idx].Trim();
+
+            if (string.IsNullOrWhiteSpace(target))
+                continue;
+
+            if (!pois.Any(p => string.Equals(p.Target, target, StringComparison.Ordinal)))
+                pois.Add((target, label));
+        }
+
+        return (currentSystem, pois);
     }
 
     private static GalaxyMapSnapshot LoadGalaxyMapFromCache()
