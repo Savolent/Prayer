@@ -1,5 +1,7 @@
 ![Prayer](prayer.png)
 
+WARNING: Slop ahead! Most of this code was written by Codex and hasn't been well tested! This is a WIP preview!
+
 # Prayer
 
 Prayer is a platform backend for SpaceMolt clients.
@@ -26,6 +28,28 @@ Prayer’s killer feature is the control language plus the agent that writes it.
 - Clients observe state/status and can halt, resume, or edit at any point.
 
 This keeps the UX conversational while avoiding black-box automation.
+
+## DSL quick primer
+
+Prayer scripts use a small DSL that the runtime parses and executes deterministically.
+
+- One command per line, terminated by `;`
+- Blocks are supported as `repeat { ... }`, `if <CONDITION> { ... }`, and `until <CONDITION> { ... }`
+- `halt;` is a first-class DSL command to stop execution
+- The agent should generate only supported commands and syntax
+
+Example:
+
+```txt
+if FUEL() > 5 {
+  go node_alpha;
+}
+
+mine carbon_ore;
+sell cargo;
+```
+
+The runtime remains interruptible: clients can halt execution, update script text, and resume with full state visibility.
 
 ## Why it matters
 
