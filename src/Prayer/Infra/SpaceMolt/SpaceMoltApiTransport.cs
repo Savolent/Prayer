@@ -4,6 +4,7 @@ using System.Net;
 using System.Net.Http;
 using System.Net.Http.Json;
 using System.Text.Json;
+using System.Threading;
 
 internal sealed class SpaceMoltApiTransport
 {
@@ -23,7 +24,8 @@ internal sealed class SpaceMoltApiTransport
         bool debugEnabled,
         string? debugContext,
         long requestId,
-        Action<JsonElement>? observePayload)
+        Action<JsonElement>? observePayload,
+        CancellationToken cancellationToken = default)
     {
         var timer = Stopwatch.StartNew();
 
@@ -33,8 +35,8 @@ internal sealed class SpaceMoltApiTransport
         if (payload != null)
             request.Content = JsonContent.Create(payload);
 
-        var response = await _http.SendAsync(request);
-        var raw = await response.Content.ReadAsStringAsync();
+        var response = await _http.SendAsync(request, cancellationToken);
+        var raw = await response.Content.ReadAsStringAsync(cancellationToken);
 
         if (debugEnabled)
         {

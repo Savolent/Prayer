@@ -1,9 +1,13 @@
 using System.Collections.Generic;
+using System.Threading;
 using System.Threading.Tasks;
 
 public interface IRuntimeTransport
 {
-    Task<RuntimeCommandResult> ExecuteCommandAsync(string command, object? payload = null);
+    Task<RuntimeCommandResult> ExecuteCommandAsync(
+        string command,
+        object? payload = null,
+        CancellationToken cancellationToken = default);
 
     Task<RuntimeCommandResult> FindRouteAsync(string targetSystem);
 

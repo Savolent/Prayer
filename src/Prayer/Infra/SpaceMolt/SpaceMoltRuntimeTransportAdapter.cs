@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Threading;
 using System.Threading.Tasks;
 
 public sealed class SpaceMoltRuntimeTransportAdapter : IRuntimeTransport
@@ -13,11 +14,14 @@ public sealed class SpaceMoltRuntimeTransportAdapter : IRuntimeTransport
 
     public int ShipCatalogPage => _client.ShipCatalogPage;
 
-    public async Task<RuntimeCommandResult> ExecuteCommandAsync(string command, object? payload = null)
+    public async Task<RuntimeCommandResult> ExecuteCommandAsync(
+        string command,
+        object? payload = null,
+        CancellationToken cancellationToken = default)
     {
         try
         {
-            var response = await _client.ExecuteAsync(command, payload);
+            var response = await _client.ExecuteAsync(command, payload, cancellationToken);
             return ToRuntimeCommandResult(response);
         }
         catch (RateLimitStopException ex)

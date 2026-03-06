@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Threading;
 using System.Threading.Channels;
 using System.Threading.Tasks;
 
@@ -82,12 +83,14 @@ public class SpaceMoltAgent
     public async Task<string> GenerateScriptFromUserInputAsync(
         string userInput,
         GameState state,
-        int maxAttempts = 3)
+        int maxAttempts = 3,
+        CancellationToken cancellationToken = default)
     {
         var generation = await _scriptGeneration.GenerateScriptFromUserInputAsync(
             userInput,
             state,
-            maxAttempts);
+            maxAttempts,
+            cancellationToken);
 
         // Persist only the raw user request for prompt->script examples.
         _lastScriptGenerationPrompt = generation.UserPrompt;

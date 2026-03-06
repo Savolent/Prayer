@@ -729,7 +729,9 @@ internal sealed class PrayerRuntimeSession : IDisposable
                     (success, responseMessage) = (false, "script cannot be empty");
                 else
                 {
+                    RuntimeHost.RequestHaltNow();
                     ControlInputQueue.Writer.TryWrite(argument);
+                    AppendStatus($"[{Label}] Script update requested");
                     (success, responseMessage) = (true, "script queued");
                 }
 
@@ -741,7 +743,9 @@ internal sealed class PrayerRuntimeSession : IDisposable
                     (success, responseMessage) = (false, "prompt cannot be empty");
                 else
                 {
+                    RuntimeHost.RequestHaltNow();
                     GenerateScriptQueue.Writer.TryWrite(argument);
+                    AppendStatus($"[{Label}] Script generation requested");
                     (success, responseMessage) = (true, "generation queued");
                 }
 
@@ -754,7 +758,9 @@ internal sealed class PrayerRuntimeSession : IDisposable
                     (success, responseMessage) = (false, "no script loaded");
                 else
                 {
+                    RuntimeHost.RequestHaltNow();
                     ControlInputQueue.Writer.TryWrite(script);
+                    AppendStatus($"[{Label}] Script restart requested");
                     (success, responseMessage) = (true, "script execution restarted");
                 }
 
@@ -762,6 +768,8 @@ internal sealed class PrayerRuntimeSession : IDisposable
             }
             case PrayerRuntimeCommandNames.Halt:
                 HaltNowQueue.Writer.TryWrite(true);
+                RuntimeHost.RequestHaltNow();
+                LoopEnabled = false;
                 AppendStatus($"[{Label}] Halt requested");
                 (success, responseMessage) = (true, "halt requested");
                 break;

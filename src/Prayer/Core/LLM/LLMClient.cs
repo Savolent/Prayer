@@ -2,6 +2,7 @@ using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
+using System.Threading;
 
 public interface ILLMClient
 {
@@ -10,7 +11,8 @@ public interface ILLMClient
         int maxTokens,
         float temperature,
         float topP,
-        float repeatPenalty = 1.1f); // default
+        float repeatPenalty = 1.1f,
+        CancellationToken cancellationToken = default); // default
 }
 
 public class LlamaCppClient : ILLMClient
@@ -32,7 +34,8 @@ public class LlamaCppClient : ILLMClient
         int maxTokens,
         float temperature,
         float topP,
-        float repeatPenalty = 1.2f) // default repetition penalty
+        float repeatPenalty = 1.2f,
+        CancellationToken cancellationToken = default) // default repetition penalty
     {
         var payload = new
         {
@@ -49,11 +52,12 @@ public class LlamaCppClient : ILLMClient
         await LogAsync("PROMPT", prompt);
         var response = await _http.PostAsync(
             _endpoint,
-            new StringContent(json, Encoding.UTF8, "application/json"));
+            new StringContent(json, Encoding.UTF8, "application/json"),
+            cancellationToken);
 
         response.EnsureSuccessStatusCode();
 
-        var responseJson = await response.Content.ReadAsStringAsync();
+        var responseJson = await response.Content.ReadAsStringAsync(cancellationToken);
 
         using var doc = JsonDocument.Parse(responseJson);
 
@@ -102,7 +106,8 @@ public class OpenAIClient : ILLMClient
         int maxTokens,
         float temperature,
         float topP,
-        float repeatPenalty = 1.1f)
+        float repeatPenalty = 1.1f,
+        CancellationToken cancellationToken = default)
     {
         try
         {
@@ -122,9 +127,10 @@ public class OpenAIClient : ILLMClient
 
             var response = await _http.PostAsync(
                 "/v1/chat/completions",
-                new StringContent(json, Encoding.UTF8, "application/json"));
+                new StringContent(json, Encoding.UTF8, "application/json"),
+                cancellationToken);
 
-            var responseJson = await response.Content.ReadAsStringAsync();
+            var responseJson = await response.Content.ReadAsStringAsync(cancellationToken);
 
             if (!response.IsSuccessStatusCode)
             {
@@ -261,7 +267,8 @@ public class GroqClient : ILLMClient
         int maxTokens,
         float temperature,
         float topP,
-        float repeatPenalty = 1.1f)
+        float repeatPenalty = 1.1f,
+        CancellationToken cancellationToken = default)
     {
         try
         {
@@ -281,9 +288,10 @@ public class GroqClient : ILLMClient
 
             var response = await _http.PostAsync(
                 "/v1/chat/completions",
-                new StringContent(json, Encoding.UTF8, "application/json"));
+                new StringContent(json, Encoding.UTF8, "application/json"),
+                cancellationToken);
 
-            var responseJson = await response.Content.ReadAsStringAsync();
+            var responseJson = await response.Content.ReadAsStringAsync(cancellationToken);
 
             if (!response.IsSuccessStatusCode)
             {
@@ -422,7 +430,8 @@ public sealed class AnthropicClient : ILLMClient
         int maxTokens,
         float temperature,
         float topP,
-        float repeatPenalty = 1.1f)
+        float repeatPenalty = 1.1f,
+        CancellationToken cancellationToken = default)
     {
         try
         {
@@ -451,9 +460,10 @@ public sealed class AnthropicClient : ILLMClient
 
             var response = await _http.PostAsync(
                 "/v1/messages",
-                new StringContent(json, Encoding.UTF8, "application/json"));
+                new StringContent(json, Encoding.UTF8, "application/json"),
+                cancellationToken);
 
-            var responseJson = await response.Content.ReadAsStringAsync();
+            var responseJson = await response.Content.ReadAsStringAsync(cancellationToken);
 
             if (!response.IsSuccessStatusCode)
             {
@@ -813,7 +823,8 @@ public sealed class SwappableLlmClient : ILLMClient
         int maxTokens,
         float temperature,
         float topP,
-        float repeatPenalty = 1.1f)
+        float repeatPenalty = 1.1f,
+        CancellationToken cancellationToken = default)
     {
         ILLMClient snapshot;
         lock (_lock)
@@ -821,6 +832,6 @@ public sealed class SwappableLlmClient : ILLMClient
             snapshot = _inner;
         }
 
-        return snapshot.CompleteAsync(prompt, maxTokens, temperature, topP, repeatPenalty);
+        return snapshot.CompleteAsync(prompt, maxTokens, temperature, topP, repeatPenalty, cancellationToken);
     }
 }

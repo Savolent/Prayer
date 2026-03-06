@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 public sealed class RuntimeHost : IRuntimeHost
 {
     private const int ScriptStepRetryLimit = 10;
+    private readonly object _activeOperationLock = new();
     private readonly string _label;
     private readonly SpaceMoltAgent _agent;
     private readonly IRuntimeTransport _transport;
@@ -24,6 +25,7 @@ public sealed class RuntimeHost : IRuntimeHost
     private readonly Action<string> _log;
     private readonly Action<string> _triggerGlobalStop;
     private readonly int _scriptGenerationMaxAttempts;
+    private CancellationTokenSource? _activeOperationCts;
 
     public RuntimeHost(
         string label,
@@ -102,10 +104,22 @@ public sealed class RuntimeHost : IRuntimeHost
         var state = _getLatestState() ?? await _stateProvider.GetLatestStateAsync();
         _setLatestState(state);
 
-        var generatedScript = await _agent.GenerateScriptFromUserInputAsync(
-            prompt,
-            state,
-            maxAttempts: _scriptGenerationMaxAttempts);
+        string generatedScript;
+        try
+        {
+            generatedScript = await RunWithCancellableOperationAsync(
+                operationToken => _agent.GenerateScriptFromUserInputAsync(
+                    prompt,
+                    state,
+                    maxAttempts: _scriptGenerationMaxAttempts,
+                    cancellationToken: operationToken),
+                CancellationToken.None);
+        }
+        catch (OperationCanceledException)
+        {
+            _publishStatus($"[{_label}] Script generation canceled");
+            return null;
+        }
 
         _agent.ActivateScriptControl();
         _agent.SetScript(generatedScript, state);
@@ -122,6 +136,11 @@ public sealed class RuntimeHost : IRuntimeHost
     public void Halt(string reason = "Halted")
     {
         _agent.Halt(reason);
+    }
+
+    public void RequestHaltNow()
+    {
+        CancelActiveOperation();
     }
 
     public RuntimeHostSnapshot GetSnapshot()
@@ -204,10 +223,13 @@ public sealed class RuntimeHost : IRuntimeHost
 
                                 try
                                 {
-                                    var generatedScript = await _agent.GenerateScriptFromUserInputAsync(
-                                        generationInput,
-                                        scriptState,
-                                        maxAttempts: _scriptGenerationMaxAttempts);
+                                    var generatedScript = await RunWithCancellableOperationAsync(
+                                        operationToken => _agent.GenerateScriptFromUserInputAsync(
+                                            generationInput,
+                                            scriptState,
+                                            maxAttempts: _scriptGenerationMaxAttempts,
+                                            cancellationToken: operationToken),
+                                        token);
                                     _agent.ActivateScriptControl();
                                     _agent.SetScript(generatedScript, scriptState);
                                     _publishStatus($"[{_label}] Generated script loaded and activated");
@@ -215,6 +237,10 @@ public sealed class RuntimeHost : IRuntimeHost
                                 catch (FormatException ex)
                                 {
                                     _publishStatus($"[{_label}] Generated script parse error: {ex.Message}");
+                                }
+                                catch (OperationCanceledException)
+                                {
+                                    _publishStatus($"[{_label}] Script generation canceled");
                                 }
                                 catch (Exception ex)
                                 {
@@ -287,8 +313,16 @@ public sealed class RuntimeHost : IRuntimeHost
                         _publishStatus($"[{_label}] Executing {FormatCommand(result)}");
                         try
                         {
-                            await _agent.ExecuteAsync(_transport, result, currentState);
+                            await RunWithCancellableOperationAsync(
+                                _ => _agent.ExecuteAsync(_transport, result, currentState),
+                                token);
                             scriptStepFailureCounts.Remove(stepKey);
+                        }
+                        catch (OperationCanceledException)
+                        {
+                            _publishStatus($"[{_label}] Command canceled by halt");
+                            _publishSnapshot(currentState);
+                            continue;
                         }
                         catch (Exception ex)
                         {
@@ -315,10 +349,15 @@ public sealed class RuntimeHost : IRuntimeHost
 
                         try
                         {
-                            var postActionState = await _stateProvider.GetLatestStateAsync();
-                            postActionState = await TryAutoDockedMaintenanceAsync(
-                                postActionState,
-                                includeScriptRefuel: true);
+                            var postActionState = await RunWithCancellableOperationAsync(
+                                async _ =>
+                                {
+                                    var refreshed = await _stateProvider.GetLatestStateAsync();
+                                    return await TryAutoDockedMaintenanceAsync(
+                                        refreshed,
+                                        includeScriptRefuel: true);
+                                },
+                                token);
                             _setLatestState(postActionState);
                             _publishSnapshot(postActionState);
                         }
@@ -332,9 +371,15 @@ public sealed class RuntimeHost : IRuntimeHost
                         _publishSnapshot(currentState);
                     }
                 }
-                catch (OperationCanceledException)
+                catch (OperationCanceledException) when (token.IsCancellationRequested)
                 {
                     throw;
+                }
+                catch (OperationCanceledException)
+                {
+                    _publishStatus($"[{_label}] In-flight operation canceled");
+                    await Task.Delay(50, token);
+                    continue;
                 }
                 catch (RuntimeRateLimitException ex)
                 {
@@ -493,19 +538,11 @@ public sealed class RuntimeHost : IRuntimeHost
         while (_haltNowReader.TryRead(out _))
         {
             handled = true;
+            CancelActiveOperation();
             _agent.InterruptActiveCommand("Interrupted by user halt");
 
             var haltState = _getLatestState() ?? await _stateProvider.GetLatestStateAsync();
             _setLatestState(haltState);
-
-            try
-            {
-                _agent.SetScript(string.Empty, haltState, preserveAssociatedPrompt: true);
-            }
-            catch
-            {
-                // Never block force-halt because script clear failed.
-            }
 
             _agent.Halt("Halted by user");
             _publishStatus($"[{_label}] Halted by user");
@@ -514,5 +551,62 @@ public sealed class RuntimeHost : IRuntimeHost
         }
 
         return handled;
+    }
+
+    private void CancelActiveOperation()
+    {
+        CancellationTokenSource? active;
+        lock (_activeOperationLock)
+        {
+            active = _activeOperationCts;
+        }
+
+        if (active == null || active.IsCancellationRequested)
+            return;
+
+        try
+        {
+            active.Cancel();
+        }
+        catch
+        {
+            // Best effort only.
+        }
+    }
+
+    private async Task<T> RunWithCancellableOperationAsync<T>(
+        Func<CancellationToken, Task<T>> action,
+        CancellationToken runtimeToken)
+    {
+        using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(runtimeToken);
+        lock (_activeOperationLock)
+        {
+            _activeOperationCts = linkedCts;
+        }
+
+        try
+        {
+            using var _ = RuntimeOperationCancellationContext.Push(linkedCts.Token);
+            return await action(linkedCts.Token);
+        }
+        finally
+        {
+            lock (_activeOperationLock)
+            {
+                if (ReferenceEquals(_activeOperationCts, linkedCts))
+                    _activeOperationCts = null;
+            }
+        }
+    }
+
+    private async Task RunWithCancellableOperationAsync(
+        Func<CancellationToken, Task> action,
+        CancellationToken runtimeToken)
+    {
+        _ = await RunWithCancellableOperationAsync(async opToken =>
+        {
+            await action(opToken);
+            return true;
+        }, runtimeToken);
     }
 }

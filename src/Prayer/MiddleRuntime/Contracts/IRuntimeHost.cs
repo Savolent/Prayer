@@ -13,6 +13,8 @@ public interface IRuntimeHost
 
     void Halt(string reason = "Halted");
 
+    void RequestHaltNow();
+
     RuntimeHostSnapshot GetSnapshot();
 
     Task TickAsync(CancellationToken token = default);

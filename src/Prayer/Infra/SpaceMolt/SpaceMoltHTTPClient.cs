@@ -147,14 +147,14 @@ public class SpaceMoltHttpClient : IDisposable, IRuntimeTransport
         _notificationTracker = new SpaceMoltNotificationTracker(MaxQueuedNotifications, MaxChatMessages);
         _sessionCache = new SpaceMoltSessionCache();
         _catalogService = new SpaceMoltCatalogService(
-            executeAsync: ExecuteAsync,
+            executeAsync: (command, payload) => ExecuteAsync(command, payload, CancellationToken.None),
             cacheRepository: _cacheRepository,
             catalogueCacheTtl: CatalogueCacheTtl,
             catalogFetchPageSize: CatalogFetchPageSize);
         _mapService = new SpaceMoltMapService(
             AppPaths.GalaxyMapFile,
             AppPaths.GalaxyKnownPoisFile,
-            ExecuteAsync);
+            (command, payload) => ExecuteAsync(command, payload, CancellationToken.None));
         _gameStateAssembler = new SpaceMoltGameStateAssembler(this);
 
         _cacheRepository.LoadMarketCachesFromDisk(_stationCache, MarketCacheTtl);
@@ -221,21 +221,32 @@ public class SpaceMoltHttpClient : IDisposable, IRuntimeTransport
         return password;
     }
 
-    public async Task<JsonElement> ExecuteAsync(string command, object? payload = null)
+    public async Task<JsonElement> ExecuteAsync(
+        string command,
+        object? payload = null,
+        CancellationToken cancellationToken = default)
     {
-        JsonElement result = await ExecuteWithRecoveryAsync(command, payload, allowRecoveryRetry: true);
+        cancellationToken = ResolveCancellationToken(cancellationToken);
+        JsonElement result = await ExecuteWithRecoveryAsync(
+            command,
+            payload,
+            allowRecoveryRetry: true,
+            cancellationToken);
 
-        await RefreshLatestStateAfterCommandAsync(command);
+        await RefreshLatestStateAfterCommandAsync(command, cancellationToken);
         return result;
     }
 
-    async Task<RuntimeCommandResult> IRuntimeTransport.ExecuteCommandAsync(string command, object? payload)
+    async Task<RuntimeCommandResult> IRuntimeTransport.ExecuteCommandAsync(
+        string command,
+        object? payload,
+        CancellationToken cancellationToken)
     {
-        JsonElement response = await ExecuteAsync(command, payload);
+        JsonElement response = await ExecuteAsync(command, payload, cancellationToken);
         return ToRuntimeCommandResult(response);
     }
 
-    private async Task RefreshLatestStateAfterCommandAsync(string command)
+    private async Task RefreshLatestStateAfterCommandAsync(string command, CancellationToken cancellationToken)
     {
         if (_isRefreshingLatestState)
             return;
@@ -246,12 +257,13 @@ public class SpaceMoltHttpClient : IDisposable, IRuntimeTransport
         if (string.Equals(command, "get_status", StringComparison.OrdinalIgnoreCase))
             return;
 
-        await RefreshLatestStateFromApiAsync();
+        await RefreshLatestStateFromApiAsync(cancellationToken);
     }
 
-    private async Task RefreshLatestStateFromApiAsync()
+    private async Task RefreshLatestStateFromApiAsync(CancellationToken cancellationToken = default)
     {
-        await _stateRefreshLock.WaitAsync();
+        cancellationToken = ResolveCancellationToken(cancellationToken);
+        await _stateRefreshLock.WaitAsync(cancellationToken);
         try
         {
             if (_isRefreshingLatestState)
@@ -259,7 +271,7 @@ public class SpaceMoltHttpClient : IDisposable, IRuntimeTransport
 
             _isRefreshingLatestState = true;
 
-            var status = await ExecuteAsync("get_status");
+            var status = await ExecuteAsync("get_status", cancellationToken: cancellationToken);
             SpaceMoltApiTransport.EnsureCommandSucceeded("get_status", status);
             if (!_notificationTracker.ObserveTickFromPayload(status, ref _currentTick))
                 _currentTick = Math.Max(1, _currentTick + 1);
@@ -286,11 +298,15 @@ public class SpaceMoltHttpClient : IDisposable, IRuntimeTransport
         return await _catalogService.GetFullShipCatalogByIdAsync(forceRefresh);
     }
 
-    public async Task<JsonElement> FindRouteAsync(string targetSystem)
+    public async Task<JsonElement> FindRouteAsync(
+        string targetSystem,
+        CancellationToken cancellationToken = default)
     {
+        cancellationToken = ResolveCancellationToken(cancellationToken);
         JsonElement routeResult = await ExecuteAsync(
             "find_route",
-            new { target_system = targetSystem });
+            new { target_system = targetSystem },
+            cancellationToken);
 
         await SpaceMoltHttpLogging.LogPathfindAsync(targetSystem, routeResult);
         return routeResult;
@@ -443,8 +459,10 @@ public class SpaceMoltHttpClient : IDisposable, IRuntimeTransport
     private async Task<JsonElement> ExecuteWithRecoveryAsync(
         string command,
         object? payload,
-        bool allowRecoveryRetry)
+        bool allowRecoveryRetry,
+        CancellationToken cancellationToken = default)
     {
+        cancellationToken = ResolveCancellationToken(cancellationToken);
         var timer = Stopwatch.StartNew();
         await EnsureUsableSessionAsync(preferCachedSession: false);
 
@@ -460,12 +478,17 @@ public class SpaceMoltHttpClient : IDisposable, IRuntimeTransport
                 DebugEnabled,
                 DebugContext,
                 requestId,
-                content => _notificationTracker.ObservePayload(content, ref _currentTick));
+                content => _notificationTracker.ObservePayload(content, ref _currentTick),
+                cancellationToken);
 
             if (allowRecoveryRetry && IsSessionInvalidPayload(result))
             {
                 await RecoverSessionAsync($"command:{command}");
-                return await ExecuteWithRecoveryAsync(command, payload, allowRecoveryRetry: false);
+                return await ExecuteWithRecoveryAsync(
+                    command,
+                    payload,
+                    allowRecoveryRetry: false,
+                    cancellationToken);
             }
 
             succeeded = !SpaceMoltApiTransport.TryExtractApiError(result, out _, out _, out _);
@@ -474,7 +497,11 @@ public class SpaceMoltHttpClient : IDisposable, IRuntimeTransport
         catch (Exception ex) when (allowRecoveryRetry && IsSessionInvalidException(ex))
         {
             await RecoverSessionAsync($"command:{command}");
-            return await ExecuteWithRecoveryAsync(command, payload, allowRecoveryRetry: false);
+            return await ExecuteWithRecoveryAsync(
+                command,
+                payload,
+                allowRecoveryRetry: false,
+                cancellationToken);
         }
         finally
         {
@@ -523,6 +550,15 @@ public class SpaceMoltHttpClient : IDisposable, IRuntimeTransport
 
         ApplySession(cached);
         return true;
+    }
+
+    private static CancellationToken ResolveCancellationToken(CancellationToken cancellationToken)
+    {
+        if (cancellationToken.CanBeCanceled)
+            return cancellationToken;
+
+        var ambient = RuntimeOperationCancellationContext.Current;
+        return ambient ?? CancellationToken.None;
     }
 
     private async Task RecoverSessionAsync(string trigger)

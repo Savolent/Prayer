@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 
 public sealed record ScriptGenerationResult(string UserPrompt, string Script);
@@ -33,7 +34,8 @@ public sealed class ScriptGenerationService
     public async Task<ScriptGenerationResult> GenerateScriptFromUserInputAsync(
         string userInput,
         GameState state,
-        int maxAttempts = 3)
+        int maxAttempts = 3,
+        CancellationToken cancellationToken = default)
     {
         var attempts = Math.Max(1, maxAttempts);
         var generationInput = (userInput ?? string.Empty).Trim();
@@ -68,7 +70,8 @@ public sealed class ScriptGenerationService
                 prompt,
                 maxTokens: 320,
                 temperature: 0.2f,
-                topP: 0.9f);
+                topP: 0.9f,
+                cancellationToken: cancellationToken);
 
             var script = ExtractScript(result);
 
