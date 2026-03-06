@@ -11,8 +11,8 @@ Date: 2026-03-05
   - `src/Prayer/MiddleRuntime/Execution/CommandExecutionEngine.cs`
   - `src/Prayer/MiddleRuntime/Agent/*`
 - In progress: `Prayer` HTTP host scaffold added at `src/Prayer`.
-- Completed: Prayer now runs real runtime worker sessions and exposes explicit runtime control endpoints (script, generate, execute, halt, loop, status, snapshot).
-- In progress: App has switched to Prayer-only runtime command/loop routing and active-bot state polling via Prayer `/state`.
+- Completed: Prayer now runs real runtime worker sessions and exposes explicit runtime control endpoints (script, generate, execute, halt, status, snapshot).
+- In progress: App has switched to Prayer-only runtime command routing and active-bot state polling via Prayer `/state`.
 - In progress: Shared API DTO contract project introduced (`src/Prayer.Contracts`) and wired into both App and Prayer for session/command/snapshot payloads.
 - Completed: Legacy Prayer `/ui` display payload path removed; App now renders from structured state contract.
 - Completed: `src/Prayer/Prayer.csproj` no longer references `SpaceMoltLLM.csproj`; Prayer now compiles required runtime/core/infra source directly.
@@ -51,7 +51,6 @@ Exit criteria:
 3. Expose endpoints for:
    - setting/generating/executing script
    - halt/interrupt
-   - loop toggle
    - runtime snapshot and status feed
 4. Wire runtime to infra adapters through DI.
 

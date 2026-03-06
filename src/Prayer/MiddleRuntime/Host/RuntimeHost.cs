@@ -15,7 +15,6 @@ public sealed class RuntimeHost : IRuntimeHost
     private readonly ChannelReader<string> _generateScriptReader;
     private readonly ChannelReader<bool> _saveExampleReader;
     private readonly ChannelReader<bool> _haltNowReader;
-    private readonly Func<bool> _isLoopEnabled;
     private readonly Func<GameState?> _getLatestState;
     private readonly Action<GameState> _setLatestState;
     private readonly Func<DateTime> _getLastHaltedSnapshotAt;
@@ -36,7 +35,6 @@ public sealed class RuntimeHost : IRuntimeHost
         ChannelReader<string> generateScriptReader,
         ChannelReader<bool> saveExampleReader,
         ChannelReader<bool> haltNowReader,
-        Func<bool> isLoopEnabled,
         Func<GameState?> getLatestState,
         Action<GameState> setLatestState,
         Func<DateTime> getLastHaltedSnapshotAt,
@@ -55,7 +53,6 @@ public sealed class RuntimeHost : IRuntimeHost
         _generateScriptReader = generateScriptReader;
         _saveExampleReader = saveExampleReader;
         _haltNowReader = haltNowReader;
-        _isLoopEnabled = isLoopEnabled;
         _getLatestState = getLatestState;
         _setLatestState = setLatestState;
         _getLastHaltedSnapshotAt = getLastHaltedSnapshotAt;
@@ -268,22 +265,6 @@ public sealed class RuntimeHost : IRuntimeHost
 
                     if (_agent.IsHalted)
                     {
-                        if (_isLoopEnabled() && !string.IsNullOrWhiteSpace(_agent.CurrentControlInput))
-                        {
-                            var scriptState = _getLatestState() ?? await _stateProvider.GetLatestStateAsync();
-                            _setLatestState(scriptState);
-
-                            try
-                            {
-                                _agent.SetScript(_agent.CurrentControlInput, scriptState);
-                                continue;
-                            }
-                            catch (FormatException ex)
-                            {
-                                _publishStatus($"[{_label}] Loop restart failed: {ex.Message}");
-                            }
-                        }
-
                         if (_getLatestState() == null ||
                             DateTime.UtcNow - _getLastHaltedSnapshotAt() > TimeSpan.FromSeconds(1))
                         {

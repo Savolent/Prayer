@@ -20,10 +20,6 @@ public sealed record SetScriptRequest(string Script);
 public sealed record GenerateScriptRequest(string Prompt);
 public sealed record GenerateScriptResponse(string Script);
 
-public sealed record LoopUpdateRequest(bool Enabled);
-
-public sealed record LoopUpdateResponse(string SessionId, bool Enabled);
-
 public sealed record CommandAckResponse(string SessionId, string Command, string Message);
 
 public sealed record RuntimeHostSnapshotDto(
@@ -48,15 +44,13 @@ public sealed record RuntimeStateResponse(
     IReadOnlyList<string> ExecutionStatusLines,
     string? ControlInput,
     int? CurrentScriptLine,
-    string? LastGenerationPrompt,
-    bool LoopEnabled);
+    string? LastGenerationPrompt);
 
 public sealed record SessionSummary(
     string Id,
     string Label,
     DateTime CreatedUtc,
     DateTime LastUpdatedUtc,
-    bool LoopEnabled,
     bool IsHalted,
     bool HasActiveCommand,
     int? CurrentScriptLine);

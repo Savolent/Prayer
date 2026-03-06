@@ -39,8 +39,7 @@ var snapshot = new RuntimeStateResponse(
     ExecutionStatusLines: new[] { "ok" },
     ControlInput: "wait",
     CurrentScriptLine: 1,
-    LastGenerationPrompt: null,
-    LoopEnabled: true);
+    LastGenerationPrompt: null);
 
 var json = JsonSerializer.Serialize(snapshot, new JsonSerializerOptions(JsonSerializerDefaults.Web));
 using var doc = JsonDocument.Parse(json);
@@ -51,7 +50,6 @@ AssertType(root, "memory", JsonValueKind.Array);
 AssertType(root, "executionStatusLines", JsonValueKind.Array);
 AssertType(root, "controlInput", JsonValueKind.String);
 AssertType(root, "currentScriptLine", JsonValueKind.Number);
-AssertType(root, "loopEnabled", JsonValueKind.True);
 
 var state = root.GetProperty("state");
 AssertType(state, "system", JsonValueKind.String);

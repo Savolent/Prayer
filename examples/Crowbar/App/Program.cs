@@ -110,17 +110,6 @@ class Program
             }
         }
 
-        bool GetActiveBotLoopEnabled()
-        {
-            lock (botLock)
-            {
-                if (activeBotId == null || !botSessions.TryGetValue(activeBotId, out var session))
-                    return false;
-
-                return session.LoopEnabled;
-            }
-        }
-
         htmxUi.SetGenerateScriptHandler(async (botId, prompt) =>
         {
             if (string.IsNullOrWhiteSpace(prompt))
@@ -154,7 +143,6 @@ class Program
             GetBotTabs,
             GetActiveBotId,
             GetActiveBot,
-            GetActiveBotLoopEnabled,
             GetExecutionStatusLinesForBot,
             LogAuth);
         var sessionPollers = new Dictionary<string, (CancellationTokenSource Cts, Task Task)>(StringComparer.Ordinal);
@@ -523,57 +511,6 @@ class Program
                             snapshotPublisher.PublishActiveSnapshot();
                     }
 
-                    while (channels.LoopUpdates.Reader.TryRead(out var update))
-                    {
-                        BotSession? active;
-                        bool enabled;
-                        string? prayerSessionId = null;
-
-                        lock (botLock)
-                        {
-                            active = activeBotId != null && botSessions.TryGetValue(activeBotId, out var session)
-                                ? session
-                                : null;
-
-                            if (active == null)
-                            {
-                                enabled = false;
-                            }
-                            else
-                            {
-                                enabled = update.Enabled ?? !active.LoopEnabled;
-                                active.LoopEnabled = enabled;
-                                prayerSessionId = active.PrayerSessionId;
-                            }
-                        }
-
-                        if (active == null)
-                        {
-                            channels.Status.Writer.TryWrite("No active bot selected.");
-                            continue;
-                        }
-
-                        if (string.IsNullOrWhiteSpace(prayerSessionId))
-                        {
-                            channels.Status.Writer.TryWrite($"[{active.Label}] Prayer session is not available.");
-                            continue;
-                        }
-
-                        try
-                        {
-                            await prayerApi.SetLoopEnabledAsync(prayerSessionId, enabled);
-                        }
-                        catch (Exception ex)
-                        {
-                            channels.Status.Writer.TryWrite($"[{active.Label}] Loop update failed: {ex.Message}");
-                            LogAuth($"loop_update_failed | {active.Label} | {ex.GetType().Name}: {ex.Message}");
-                            continue;
-                        }
-
-                        channels.Status.Writer.TryWrite($"[{active.Label}] Loop {(enabled ? "enabled" : "disabled")}");
-                        snapshotPublisher.PublishActiveSnapshot();
-                    }
-
                     while (channels.RuntimeCommands.Reader.TryRead(out var request))
                     {
                         BotSession? target;
@@ -663,8 +600,7 @@ class Program
                         snapshot.CurrentScriptLine,
                         snapshot.LastGenerationPrompt,
                         snapshot.Bots,
-                        snapshot.ActiveBotId,
-                        snapshot.ActiveBotLoopEnabled
+                        snapshot.ActiveBotId
                     );
                 }
             }

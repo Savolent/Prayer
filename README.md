@@ -137,7 +137,6 @@ Runtime execution and state:
 - `POST /api/runtime/sessions/{id}/script/execute`
 - `POST /api/runtime/sessions/{id}/halt`
 - `POST /api/runtime/sessions/{id}/save-example`
-- `PUT /api/runtime/sessions/{id}/loop`
 - `POST /api/runtime/sessions/{id}/commands`
 
 Observability:

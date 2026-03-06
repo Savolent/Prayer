@@ -69,7 +69,6 @@ You have two common options:
   - `POST /api/runtime/sessions/{id}/script/generate`
   - `POST /api/runtime/sessions/{id}/script/execute`
   - `POST /api/runtime/sessions/{id}/halt`
-  - `PUT /api/runtime/sessions/{id}/loop`
   - `POST /api/runtime/sessions/{id}/save-example`
 
 ## 6. Poll state for UI

@@ -295,15 +295,6 @@ app.MapPost("/api/runtime/sessions/{id}/save-example", (string id, RuntimeSessio
     return Results.Ok(new Contracts.CommandAckResponse(session.Id, PrayerRuntimeCommandNames.SaveExample, message));
 });
 
-app.MapPut("/api/runtime/sessions/{id}/loop", (string id, Contracts.LoopUpdateRequest request, RuntimeSessionStore store) =>
-{
-    if (!store.TryGet(id, out var session))
-        return Results.NotFound();
-
-    session.SetLoopEnabled(request.Enabled);
-    return Results.Ok(new Contracts.LoopUpdateResponse(session.Id, session.LoopEnabled));
-});
-
 app.MapPost("/api/runtime/sessions/{id}/commands", (string id, Contracts.RuntimeCommandRequest request, RuntimeSessionStore store) =>
 {
     if (!store.TryGet(id, out var session))
@@ -329,7 +320,6 @@ static Contracts.SessionSummary ToSessionSummary(PrayerRuntimeSession session)
         session.Label,
         session.CreatedUtc,
         session.LastUpdatedUtc,
-        session.LoopEnabled,
         snapshot.IsHalted,
         snapshot.HasActiveCommand,
         snapshot.CurrentScriptLine);
@@ -539,7 +529,6 @@ internal sealed class PrayerRuntimeSession : IDisposable
             GenerateScriptQueue.Reader,
             SaveExampleQueue.Reader,
             HaltNowQueue.Reader,
-            () => LoopEnabled,
             () => LatestState,
             UpdateLatestState,
             () => LastHaltedSnapshotAt,
@@ -549,7 +538,6 @@ internal sealed class PrayerRuntimeSession : IDisposable
             _ => { },
             reason =>
             {
-                LoopEnabled = false;
                 AppendStatus($"[{Label}] Global stop requested: {reason}");
             },
             PrayerDefaults.ScriptGenerationMaxAttempts);
@@ -599,7 +587,6 @@ internal sealed class PrayerRuntimeSession : IDisposable
     public IRuntimeStateProvider RuntimeStateProvider { get; }
     public IRuntimeHost RuntimeHost { get; }
 
-    public bool LoopEnabled { get; private set; }
     public GameState? LatestState { get; private set; }
     public DateTime LastHaltedSnapshotAt { get; private set; } = DateTime.MinValue;
     public long StateVersion => Interlocked.Read(ref _stateVersion);
@@ -629,8 +616,7 @@ internal sealed class PrayerRuntimeSession : IDisposable
             GetStatusLines(),
             Agent.CurrentControlInput,
             Agent.CurrentScriptLine,
-            Agent.LastScriptGenerationPrompt,
-            LoopEnabled);
+            Agent.LastScriptGenerationPrompt);
     }
 
     public async Task<bool> WaitForStateChangeAsync(long sinceVersion, int waitMs, CancellationToken cancellationToken)
@@ -713,12 +699,6 @@ internal sealed class PrayerRuntimeSession : IDisposable
         }
     }
 
-    public void SetLoopEnabled(bool enabled)
-    {
-        LoopEnabled = enabled;
-        AppendStatus($"[{Label}] Loop {(enabled ? "enabled" : "disabled")}");
-    }
-
     private bool TryApplyCommand(string command, string argument, out string message)
     {
         var started = Stopwatch.StartNew();
@@ -762,21 +742,12 @@ internal sealed class PrayerRuntimeSession : IDisposable
             case PrayerRuntimeCommandNames.Halt:
                 HaltNowQueue.Writer.TryWrite(true);
                 RuntimeHost.RequestHaltNow();
-                LoopEnabled = false;
                 AppendStatus($"[{Label}] Halt requested");
                 (success, responseMessage) = (true, "halt requested");
                 break;
             case PrayerRuntimeCommandNames.SaveExample:
                 SaveExampleQueue.Writer.TryWrite(true);
                 (success, responseMessage) = (true, "save example requested");
-                break;
-            case "loop_on":
-                LoopEnabled = true;
-                (success, responseMessage) = (true, "loop enabled");
-                break;
-            case "loop_off":
-                LoopEnabled = false;
-                (success, responseMessage) = (true, "loop disabled");
                 break;
             default:
                 (success, responseMessage) = (false, $"unknown command: {command}");
@@ -794,14 +765,13 @@ internal sealed class PrayerRuntimeSession : IDisposable
         if (success)
         {
             _logger.LogInformation(
-                "Session {SessionId} command {Command} accepted in {ElapsedMs} ms (control={ControlDepth}, generate={GenerateDepth}, halt={HaltDepth}, loop={LoopEnabled})",
+                "Session {SessionId} command {Command} accepted in {ElapsedMs} ms (control={ControlDepth}, generate={GenerateDepth}, halt={HaltDepth})",
                 Id,
                 command,
                 started.Elapsed.TotalMilliseconds,
                 controlQueueDepth,
                 generateQueueDepth,
-                haltQueueDepth,
-                LoopEnabled);
+                haltQueueDepth);
         }
         else
         {

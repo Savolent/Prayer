@@ -13,6 +13,5 @@ public sealed record UiSnapshot(
     int? CurrentScriptLine,
     string? LastGenerationPrompt,
     IReadOnlyList<BotTab> Bots,
-    string? ActiveBotId,
-    bool ActiveBotLoopEnabled
+    string? ActiveBotId
 );

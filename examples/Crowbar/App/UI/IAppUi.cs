@@ -4,7 +4,6 @@ using System.Threading.Channels;
 public interface IAppUi
 {
     void SetRuntimeCommandWriter(ChannelWriter<RuntimeCommandRequest> writer);
-    void SetLoopUpdateWriter(ChannelWriter<LoopUpdate> writer);
     void SetSwitchBotWriter(ChannelWriter<string> writer);
     void SetAddBotWriter(ChannelWriter<AddBotRequest> writer);
     void SetLlmSelectionWriter(ChannelWriter<LlmProviderSelection> writer);
@@ -26,8 +25,7 @@ public interface IAppUi
         int? currentScriptLine,
         string? lastGenerationPrompt,
         IReadOnlyList<BotTab> bots,
-        string? activeBotId,
-        bool activeBotLoopEnabled);
+        string? activeBotId);
 
     void Run();
 }

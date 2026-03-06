@@ -87,14 +87,6 @@ public sealed class PrayerApiClient
         return payload.Script;
     }
 
-    public async Task SetLoopEnabledAsync(string sessionId, bool enabled)
-    {
-        var response = await _http.PutAsJsonAsync(
-            $"api/runtime/sessions/{sessionId}/loop",
-            new Contracts.LoopUpdateRequest(enabled));
-        await EnsureSuccessWithDetailsAsync(response);
-    }
-
     public async Task<AppPrayerRuntimeState> GetRuntimeStateAsync(string sessionId)
     {
         var result = await GetRuntimeStateLongPollAsync(
@@ -224,8 +216,7 @@ public sealed class PrayerApiClient
             snapshot.ExecutionStatusLines,
             snapshot.ControlInput,
             snapshot.CurrentScriptLine,
-            snapshot.LastGenerationPrompt,
-            snapshot.LoopEnabled);
+            snapshot.LastGenerationPrompt);
     }
 }
 
@@ -235,8 +226,7 @@ public sealed record AppPrayerRuntimeState(
     IReadOnlyList<string> ExecutionStatusLines,
     string? ControlInput,
     int? CurrentScriptLine,
-    string? LastGenerationPrompt,
-    bool LoopEnabled);
+    string? LastGenerationPrompt);
 
 public sealed record AppPrayerRuntimeStatePollResult(
     AppPrayerRuntimeState? State,
