@@ -2,6 +2,24 @@ using System.Text.Json;
 
 public static class SpaceMoltHttpLogging
 {
+    private static async Task AppendSafeAsync(string path, string content)
+    {
+        try
+        {
+            var dir = Path.GetDirectoryName(path);
+            if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
+
+            await using var fs = new FileStream(
+                path,
+                FileMode.Append,
+                FileAccess.Write,
+                FileShare.ReadWrite);
+            await using var writer = new StreamWriter(fs);
+            await writer.WriteAsync(content);
+        }
+        catch (IOException) { }
+    }
+
     public static async Task LogBadRequestAsync(string command, object? payload, string rawResponse)
     {
         string payloadText;
@@ -21,7 +39,7 @@ public static class SpaceMoltHttpLogging
             $"Payload: {payloadText}\n" +
             $"Response: {rawResponse}\n\n";
 
-        await File.AppendAllTextAsync(AppPaths.HttpBadRequestLogFile, entry);
+        await AppendSafeAsync(AppPaths.HttpBadRequestLogFile, entry);
     }
 
     public static async Task LogPathfindAsync(string targetSystem, JsonElement routeResult)
@@ -31,7 +49,7 @@ public static class SpaceMoltHttpLogging
             $"TargetSystem: {targetSystem}\n" +
             $"Result: {routeResult.GetRawText()}\n\n";
 
-        await File.AppendAllTextAsync(AppPaths.PathfindLogFile, entry);
+        await AppendSafeAsync(AppPaths.PathfindLogFile, entry);
     }
 
     public static async Task LogApiResponseAsync(
@@ -64,7 +82,7 @@ public static class SpaceMoltHttpLogging
             $"HTTP: {statusCode} {reasonPhrase}\n" +
             $"Response: {rawResponse}\n\n";
 
-        await File.AppendAllTextAsync(AppPaths.SpaceMoltApiLogFile, entry);
+        await AppendSafeAsync(AppPaths.SpaceMoltApiLogFile, entry);
     }
 
     public static async Task LogAnalyzeMarketAsync(string stationId, JsonElement analyzeMarketResult)
@@ -74,7 +92,7 @@ public static class SpaceMoltHttpLogging
             $"Station: {stationId}\n" +
             $"Result: {analyzeMarketResult.GetRawText()}\n\n";
 
-        await File.AppendAllTextAsync(AppPaths.AnalyzeMarketLogFile, entry);
+        await AppendSafeAsync(AppPaths.AnalyzeMarketLogFile, entry);
     }
 
     public static async Task LogItemCatalogAsync(
@@ -93,7 +111,7 @@ public static class SpaceMoltHttpLogging
             $"Params: type={type}, category={category ?? "(null)"}, id={id ?? "(null)"}, page={(page?.ToString() ?? "(null)")}, page_size={(pageSize?.ToString() ?? "(null)")}, search={search ?? "(null)"}\n" +
             $"Payload: {rawPayload}\n\n";
 
-        await File.AppendAllTextAsync(AppPaths.ItemCatalogLogFile, entry);
+        await AppendSafeAsync(AppPaths.ItemCatalogLogFile, entry);
     }
 
     public static async Task LogApiCommandStatsAsync(string context, string summary)
@@ -103,6 +121,6 @@ public static class SpaceMoltHttpLogging
             $"Context: {context}\n" +
             $"{summary}\n\n";
 
-        await File.AppendAllTextAsync(AppPaths.SpaceMoltApiStatsLogFile, entry);
+        await AppendSafeAsync(AppPaths.SpaceMoltApiStatsLogFile, entry);
     }
 }
