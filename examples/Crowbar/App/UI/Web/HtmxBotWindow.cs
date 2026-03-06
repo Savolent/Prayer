@@ -1037,7 +1037,12 @@ public sealed class HtmxBotWindow : IAppUi
     {
         content = string.Empty;
         var assembly = typeof(HtmxBotWindow).Assembly;
-        var resourceName = $"{assembly.GetName().Name}.src.UI.Web.Assets.{fileName}";
+        var suffix = $".UI.Web.Assets.{fileName}";
+        var resourceName = assembly.GetManifestResourceNames()
+            .FirstOrDefault(name => name.EndsWith(suffix, StringComparison.Ordinal));
+        if (resourceName == null)
+            return false;
+
         using var stream = assembly.GetManifestResourceStream(resourceName);
         if (stream == null)
             return false;
@@ -1072,9 +1077,17 @@ public sealed class HtmxBotWindow : IAppUi
 
             for (var depth = 0; depth < 8 && current != null; depth++)
             {
-                var candidate = Path.Combine(current.FullName, "src", "UI", "Web", "Assets", fileName);
-                if (File.Exists(candidate))
-                    return candidate;
+                var candidates = new[]
+                {
+                    Path.Combine(current.FullName, "examples", "Crowbar", "App", "UI", "Web", "Assets", fileName),
+                    Path.Combine(current.FullName, "src", "UI", "Web", "Assets", fileName)
+                };
+
+                foreach (var candidate in candidates)
+                {
+                    if (File.Exists(candidate))
+                        return candidate;
+                }
 
                 current = current.Parent;
             }
