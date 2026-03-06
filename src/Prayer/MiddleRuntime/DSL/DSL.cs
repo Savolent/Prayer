@@ -102,6 +102,10 @@ public static class DslParser
     private static readonly TextParser<string> ArgumentToken =
         Integer.Try().Or(Identifier);
 
+    private static readonly TextParser<string> ConditionExpression =
+        Span.Regex("[^\\{\\r\\n]+")
+            .Select(x => x.ToStringValue().Trim());
+
     private static readonly TextParser<DslAstNode> CommandAst =
         from commandName in Identifier
         from commandArgs in (
@@ -125,7 +129,7 @@ public static class DslParser
     private static readonly TextParser<DslAstNode> IfAst =
         from _if in Span.EqualToIgnoreCase("if").Value(Unit.Value)
         from _ in Ws1
-        from condition in Identifier
+        from condition in ConditionExpression
         from __ in Ws
         from _open in Character.EqualTo('{')
         from ___ in Ws
@@ -137,7 +141,7 @@ public static class DslParser
     private static readonly TextParser<DslAstNode> UntilAst =
         from _until in Span.EqualToIgnoreCase("until").Value(Unit.Value)
         from _ in Ws1
-        from condition in Identifier
+        from condition in ConditionExpression
         from __ in Ws
         from _open in Character.EqualTo('{')
         from ___ in Ws
@@ -460,12 +464,7 @@ public static class DslParser
 
         int i = indexAfterToken;
         SkipWhitespace(text, ref i);
-        if (i >= text.Length || !IsIdentifierStart(text[i]))
-            return false;
-
-        _ = ReadIdentifier(text, ref i);
-        SkipWhitespace(text, ref i);
-        return i < text.Length && text[i] == '{';
+        return HasConditionAndOpeningBrace(text, i);
     }
 
     private static bool IsUntilToken(string token, string text, int indexAfterToken)
@@ -475,12 +474,7 @@ public static class DslParser
 
         int i = indexAfterToken;
         SkipWhitespace(text, ref i);
-        if (i >= text.Length || !IsIdentifierStart(text[i]))
-            return false;
-
-        _ = ReadIdentifier(text, ref i);
-        SkipWhitespace(text, ref i);
-        return i < text.Length && text[i] == '{';
+        return HasConditionAndOpeningBrace(text, i);
     }
 
     private static void SkipRepeatHeader(string text, ref int index, ref int line)
@@ -492,22 +486,53 @@ public static class DslParser
 
     private static void SkipIfHeader(string text, ref int index, ref int line)
     {
-        SkipWhitespaceAndCountLines(text, ref index, ref line);
-        if (index < text.Length && IsIdentifierStart(text[index]))
-            _ = ReadIdentifier(text, ref index);
-        SkipWhitespaceAndCountLines(text, ref index, ref line);
-        if (index < text.Length && text[index] == '{')
-            index++;
+        SkipConditionHeader(text, ref index, ref line);
     }
 
     private static void SkipUntilHeader(string text, ref int index, ref int line)
     {
-        SkipWhitespaceAndCountLines(text, ref index, ref line);
-        if (index < text.Length && IsIdentifierStart(text[index]))
-            _ = ReadIdentifier(text, ref index);
-        SkipWhitespaceAndCountLines(text, ref index, ref line);
-        if (index < text.Length && text[index] == '{')
+        SkipConditionHeader(text, ref index, ref line);
+    }
+
+    private static bool HasConditionAndOpeningBrace(string text, int index)
+    {
+        bool sawNonWhitespace = false;
+        int i = index;
+
+        while (i < text.Length)
+        {
+            char c = text[i];
+            if (c == '\r' || c == '\n')
+                return false;
+
+            if (c == '{')
+                return sawNonWhitespace;
+
+            if (!char.IsWhiteSpace(c))
+                sawNonWhitespace = true;
+
+            i++;
+        }
+
+        return false;
+    }
+
+    private static void SkipConditionHeader(string text, ref int index, ref int line)
+    {
+        while (index < text.Length)
+        {
+            char c = text[index];
+            if (c == '\n')
+                line++;
+
+            if (c == '{')
+            {
+                index++;
+                return;
+            }
+
             index++;
+        }
     }
 
     private static void SkipWhitespace(string text, ref int index)
@@ -605,20 +630,24 @@ public static class DslParser
         sb.AppendLine();
         sb.AppendLine("Keywords:");
         sb.AppendLine("- repeat: infinite runtime loop block");
-        sb.AppendLine("- until: runtime loop block that exits when a boolean flag is true");
-        sb.AppendLine("- if: conditional block executed only when a boolean flag is true");
+        sb.AppendLine("- until: runtime loop block that exits when a condition is true");
+        sb.AppendLine("- if: conditional block executed only when a condition is true");
         sb.AppendLine("- halt: stop script execution");
         sb.AppendLine();
         sb.AppendLine("Rules:");
         sb.AppendLine("- Blocks are supported via: repeat { ... }");
-        sb.AppendLine("- Conditional blocks are supported via: if <BOOLEAN_FLAG> { ... }");
-        sb.AppendLine("- Until blocks are supported via: until <BOOLEAN_FLAG> { ... }");
-        sb.AppendLine($"- Boolean flags: {string.Join(", ", BooleanTokens)}");
+        sb.AppendLine("- Conditional blocks are supported via: if <CONDITION> { ... }");
+        sb.AppendLine("- Until blocks are supported via: until <CONDITION> { ... }");
+        sb.AppendLine($"- Boolean flag conditions: {string.Join(", ", BooleanTokens)}");
+        sb.AppendLine("- Numeric conditions are also supported, e.g. FUEL() > 5, CREDITS() >= 1000");
         sb.AppendLine("- All commands still end with ';' inside repeat blocks.");
         sb.AppendLine();
         sb.AppendLine("Examples:");
         sb.AppendLine("- if MISSION_COMPLETE {");
         sb.AppendLine("    halt;");
+        sb.AppendLine("  }");
+        sb.AppendLine("- if FUEL() > 5 {");
+        sb.AppendLine("    go node_alpha;");
         sb.AppendLine("  }");
         sb.AppendLine("- until MISSION_COMPLETE {");
         sb.AppendLine("    mine carbon_ore;");
@@ -768,9 +797,10 @@ public static class DslParser
             statementRules.Add(commandRuleName);
         }
 
+        sb.AppendLine("condition_expr ::= [^\\{\\n\\r][^\\{\\n\\r]*");
         sb.AppendLine("repeat_stmt ::= \"repeat\" ws \"{\" ws statement* ws \"}\"");
-        sb.AppendLine("if_stmt ::= \"if\" ws identifier ws \"{\" ws statement* ws \"}\"");
-        sb.AppendLine("until_stmt ::= \"until\" ws identifier ws \"{\" ws statement* ws \"}\"");
+        sb.AppendLine("if_stmt ::= \"if\" ws condition_expr ws \"{\" ws statement* ws \"}\"");
+        sb.AppendLine("until_stmt ::= \"until\" ws condition_expr ws \"{\" ws statement* ws \"}\"");
         sb.AppendLine("halt_stmt ::= \"halt\" ws \";\"");
         sb.AppendLine($"statement ::= {string.Join(" | ", statementRules)} | repeat_stmt | if_stmt | until_stmt | halt_stmt");
         sb.AppendLine("script ::= (ws statement)*");
@@ -983,12 +1013,10 @@ public static class DslParser
                 }
                 case DslIfAstNode ifNode:
                 {
-                    if (string.IsNullOrWhiteSpace(ifNode.Condition) ||
-                        !BooleanTokenSet.Contains(ifNode.Condition.Trim()))
+                    if (!DslBooleanEvaluator.TryValidateCondition(ifNode.Condition, out var error))
                     {
                         throw new FormatException(
-                            $"Unknown boolean flag '{ifNode.Condition}'. " +
-                            $"Allowed: {string.Join(", ", BooleanTokens)}.");
+                            $"Invalid condition '{ifNode.Condition}': {error}.");
                     }
 
                     ValidateNodes(ifNode.Body ?? Array.Empty<DslAstNode>());
@@ -996,12 +1024,10 @@ public static class DslParser
                 }
                 case DslUntilAstNode untilNode:
                 {
-                    if (string.IsNullOrWhiteSpace(untilNode.Condition) ||
-                        !BooleanTokenSet.Contains(untilNode.Condition.Trim()))
+                    if (!DslBooleanEvaluator.TryValidateCondition(untilNode.Condition, out var error))
                     {
                         throw new FormatException(
-                            $"Unknown boolean flag '{untilNode.Condition}'. " +
-                            $"Allowed: {string.Join(", ", BooleanTokens)}.");
+                            $"Invalid condition '{untilNode.Condition}': {error}.");
                     }
 
                     ValidateNodes(untilNode.Body ?? Array.Empty<DslAstNode>());

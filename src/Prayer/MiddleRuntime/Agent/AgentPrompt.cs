@@ -169,7 +169,7 @@ public static class AgentPrompt
             "Generate a DSL script now.\n" +
             "Checklist:\n" +
             "- every command ends with ;\n" +
-            "- blocks are allowed only as: repeat { ... }, if <BOOLEAN> { ... }, until <BOOLEAN> { ... }\n" +
+            "- blocks are allowed only as: repeat { ... }, if <CONDITION> { ... }, until <CONDITION> { ... }\n" +
             "- no markdown fence\n" +
             "Return only the script text.\n" +
             "<|eot_id|>" +
