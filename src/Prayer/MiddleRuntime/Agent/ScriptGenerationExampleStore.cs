@@ -83,6 +83,7 @@ public sealed class ScriptGenerationExampleStore
     {
         try
         {
+            EnsureSeededExamplesFileExists();
             if (!File.Exists(AppPaths.ScriptGenerationExamplesFile))
                 return;
 
@@ -100,6 +101,28 @@ public sealed class ScriptGenerationExampleStore
         catch
         {
             // Loading examples should never block startup.
+        }
+    }
+
+    private static void EnsureSeededExamplesFileExists()
+    {
+        try
+        {
+            if (File.Exists(AppPaths.ScriptGenerationExamplesFile))
+                return;
+
+            if (!File.Exists(AppPaths.SeedScriptGenerationExamplesFile))
+                return;
+
+            string seed = File.ReadAllText(AppPaths.SeedScriptGenerationExamplesFile);
+            if (string.IsNullOrWhiteSpace(seed))
+                return;
+
+            File.WriteAllText(AppPaths.ScriptGenerationExamplesFile, seed);
+        }
+        catch
+        {
+            // Seeding is best-effort.
         }
     }
 

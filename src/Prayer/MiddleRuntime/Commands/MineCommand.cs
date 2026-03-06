@@ -40,7 +40,7 @@ public class MineCommand : IMultiTurnCommand, IDslCommandGrammar
         => !string.IsNullOrWhiteSpace(state.System);
 
     public string BuildHelp(GameState state)
-        => "- mine [asteroid_belt|asteroid|gas_cloud|ice_field|resourceId] → mine here, auto-go to local POI type, or find+mine a resource";
+        => "- mine [asteroid_belt|asteroid|gas_cloud|ice_field|resourceId]? → mine here, auto-go to local POI type, or find+mine a resource, args are optional!";
 
     public async Task<(bool finished, CommandExecutionResult? result)> StartAsync(
         IRuntimeTransport client,

@@ -27,6 +27,7 @@ public static class AppPaths
     public static readonly string GoArgValidationLogFile = Path.Combine(LogDir, "go_arg_validation.log");
     public static readonly string GoArgValidationMapDumpLogFile = Path.Combine(LogDir, "go_arg_validation_mapdump.log");
     public static readonly string ScriptGenerationExamplesFile = Path.Combine(CacheDir, "script_generation_examples.json");
+    public static readonly string SeedScriptGenerationExamplesFile = Path.Combine("seed", "script_generation_examples.json");
     public static readonly string SavedBotsFile = Path.Combine(CacheDir, "saved_bots.json");
     public static readonly string SavedLlmSelectionFile = Path.Combine(CacheDir, "saved_llm_selection.json");
     public static readonly string SpaceMoltSessionsFile = Path.Combine(CacheDir, "spacemolt_sessions.json");

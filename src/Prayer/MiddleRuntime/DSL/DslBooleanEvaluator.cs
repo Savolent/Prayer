@@ -1,6 +1,6 @@
 using System;
+using System.Collections.Generic;
 using System.Globalization;
-using System.Linq;
 using System.Text.RegularExpressions;
 
 internal static class DslBooleanEvaluator
@@ -16,6 +16,12 @@ internal static class DslBooleanEvaluator
     private static readonly Regex IdentifierRegex =
         new(@"^[A-Za-z_][A-Za-z0-9_]*$",
             RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
+    private static readonly IReadOnlyDictionary<string, DslBooleanPredicate> BooleanPredicateByName =
+        BuildBooleanPredicateByName(DslConditionCatalog.BooleanPredicates);
+
+    private static readonly IReadOnlyDictionary<string, DslNumericPredicate> NumericPredicateByName =
+        BuildNumericPredicateByName(DslConditionCatalog.NumericPredicates);
 
     public static bool TryParseCondition(
         string? token,
@@ -164,21 +170,22 @@ internal static class DslBooleanEvaluator
     }
 
     private static bool IsKnownBooleanToken(string token)
-        => string.Equals(token?.Trim(), "MISSION_COMPLETE", StringComparison.OrdinalIgnoreCase);
+    {
+        var normalized = (token ?? string.Empty).Trim().ToUpperInvariant();
+        return BooleanPredicateByName.ContainsKey(normalized);
+    }
 
     private static bool TryEvaluateBooleanToken(string token, GameState state, out bool value)
     {
-        value = false;
         var normalized = token.Trim().ToUpperInvariant();
-        switch (normalized)
+        if (!BooleanPredicateByName.TryGetValue(normalized, out var predicate))
         {
-            case "MISSION_COMPLETE":
-                var missions = state.ActiveMissions ?? Array.Empty<MissionInfo>();
-                value = missions.Length == 0 || missions.Any(m => m != null && m.Completed);
-                return true;
-            default:
-                return false;
+            value = false;
+            return false;
         }
+
+        value = predicate.Evaluate(state);
+        return true;
     }
 
     private static bool TryParseComparison(
@@ -283,92 +290,56 @@ internal static class DslBooleanEvaluator
     }
 
     private static bool IsKnownMetric(string metricName)
-    {
-        return metricName switch
-        {
-            "FUEL" => true,
-            "MAX_FUEL" => true,
-            "CREDITS" => true,
-            "STORAGE_CREDITS" => true,
-            "CARGO_USED" => true,
-            "CARGO_CAPACITY" => true,
-            "HULL" => true,
-            "MAX_HULL" => true,
-            "SHIELD" => true,
-            "MAX_SHIELD" => true,
-            "CPU_USED" => true,
-            "CPU_CAPACITY" => true,
-            "POWER_USED" => true,
-            "POWER_CAPACITY" => true,
-            "SPEED" => true,
-            "ARMOR" => true,
-            "MODULE_COUNT" => true,
-            "ACTIVE_MISSIONS" => true,
-            _ => false
-        };
-    }
+        => NumericPredicateByName.ContainsKey((metricName ?? string.Empty).Trim().ToUpperInvariant());
 
     private static bool TryGetMetricValue(string metricName, GameState state, out int value)
     {
-        value = 0;
-        switch (metricName)
+        var normalized = (metricName ?? string.Empty).Trim().ToUpperInvariant();
+        if (!NumericPredicateByName.TryGetValue(normalized, out var predicate))
         {
-            case "FUEL":
-                value = state.Ship.Fuel;
-                return true;
-            case "MAX_FUEL":
-                value = state.Ship.MaxFuel;
-                return true;
-            case "CREDITS":
-                value = state.Credits;
-                return true;
-            case "STORAGE_CREDITS":
-                value = state.StorageCredits;
-                return true;
-            case "CARGO_USED":
-                value = state.Ship.CargoUsed;
-                return true;
-            case "CARGO_CAPACITY":
-                value = state.Ship.CargoCapacity;
-                return true;
-            case "HULL":
-                value = state.Ship.Hull;
-                return true;
-            case "MAX_HULL":
-                value = state.Ship.MaxHull;
-                return true;
-            case "SHIELD":
-                value = state.Ship.Shield;
-                return true;
-            case "MAX_SHIELD":
-                value = state.Ship.MaxShield;
-                return true;
-            case "CPU_USED":
-                value = state.Ship.CpuUsed;
-                return true;
-            case "CPU_CAPACITY":
-                value = state.Ship.CpuCapacity;
-                return true;
-            case "POWER_USED":
-                value = state.Ship.PowerUsed;
-                return true;
-            case "POWER_CAPACITY":
-                value = state.Ship.PowerCapacity;
-                return true;
-            case "SPEED":
-                value = state.Ship.Speed;
-                return true;
-            case "ARMOR":
-                value = state.Ship.Armor;
-                return true;
-            case "MODULE_COUNT":
-                value = state.Ship.ModuleCount;
-                return true;
-            case "ACTIVE_MISSIONS":
-                value = (state.ActiveMissions ?? Array.Empty<MissionInfo>()).Length;
-                return true;
-            default:
-                return false;
+            value = 0;
+            return false;
         }
+
+        value = predicate.Resolve(state);
+        return true;
+    }
+
+    private static IReadOnlyDictionary<string, DslBooleanPredicate> BuildBooleanPredicateByName(
+        IReadOnlyList<DslBooleanPredicate> predicates)
+    {
+        var map = new Dictionary<string, DslBooleanPredicate>(StringComparer.OrdinalIgnoreCase);
+        foreach (var predicate in predicates ?? Array.Empty<DslBooleanPredicate>())
+        {
+            if (string.IsNullOrWhiteSpace(predicate.Name))
+                continue;
+
+            var name = predicate.Name.Trim().ToUpperInvariant();
+            if (map.ContainsKey(name))
+                throw new InvalidOperationException($"Duplicate boolean predicate '{name}'.");
+
+            map[name] = predicate;
+        }
+
+        return map;
+    }
+
+    private static IReadOnlyDictionary<string, DslNumericPredicate> BuildNumericPredicateByName(
+        IReadOnlyList<DslNumericPredicate> predicates)
+    {
+        var map = new Dictionary<string, DslNumericPredicate>(StringComparer.OrdinalIgnoreCase);
+        foreach (var predicate in predicates ?? Array.Empty<DslNumericPredicate>())
+        {
+            if (string.IsNullOrWhiteSpace(predicate.Name))
+                continue;
+
+            var name = predicate.Name.Trim().ToUpperInvariant();
+            if (map.ContainsKey(name))
+                throw new InvalidOperationException($"Duplicate numeric predicate '{name}'.");
+
+            map[name] = predicate;
+        }
+
+        return map;
     }
 }

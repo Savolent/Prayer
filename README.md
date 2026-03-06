@@ -67,6 +67,14 @@ Client config:
 
 - `PRAYER_BASE_URL` (default `http://localhost:5000/`)
 
+## Example project: Crowbar
+
+The repo includes `examples/Crowbar`, a full sample client app that talks to Prayer over HTTP.
+
+- Project path: `examples/Crowbar`
+- API client reference: `examples/Crowbar/App/PrayerApiClient.cs`
+- Run it with the local stack: `./scripts/dev-up.sh`
+
 ## API surface
 
 Service and preferences:
@@ -138,6 +146,38 @@ Register and create session:
 }
 ```
 
+## Cached script examples
+
+Prayer keeps script-generation examples under `cache/script_generation_examples.json`.
+This file is automatically seeded from the tracked starter file at `seed/script_generation_examples.json`
+if the cache file does not exist yet.
+
+Sample entries from cache:
+
+```txt
+Prompt: "mine"
+Script:
+mine;
+```
+
+```txt
+Prompt: "jump horizon then dock then jump nexus"
+Script:
+go horizon;
+dock;
+go nexus;
+```
+
+```txt
+Prompt: "Do a mining loop at nexus prime"
+Script:
+go nexus_prime;
+repeat {
+  mine;
+  sell cargo;
+}
+```
+
 ## Scope right now
 
 Prayer currently targets trusted internal/single-operator deployments.
@@ -146,3 +186,9 @@ Prayer currently targets trusted internal/single-operator deployments.
 - No tenant isolation yet
 
 That is intentional for the current phase: lock in the platform/runtime layer first, then harden for broader deployment.
+
+## Known limitations
+
+- Security: no built-in authentication, authorization, or tenant boundaries yet. Do not expose directly to untrusted networks.
+- API stability: endpoints and DTO fields may change during rapid iteration. Treat the current API as pre-stable and pin client/server commits together.
+- Operational model: optimized for single-operator workflows; horizontal scaling, HA/failover, and production hardening are not complete.
