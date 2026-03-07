@@ -28,7 +28,7 @@
   window._statePaneUiState = window._statePaneUiState || {};
   window._mapSubtabSelection = window._mapSubtabSelection || 'system';
   window._galaxyMapViewState = window._galaxyMapViewState || { panX: 0, panY: 0, hasUserPan: false, zoom: 4.5, hasUserZoom: false };
-  window._tickBarState = window._tickBarState || { tick: null, observedAtMs: 0, lastPostUtcMs: null, renderPct: null };
+  window._tickBarState = window._tickBarState || { tick: null, observedAtMs: 0, lastPostUtcMs: null, renderPct: null, lastFrameMs: 0 };
 
   function captureStatePaneUiState(pane) {
     if (!pane || !pane.id) return;
@@ -88,7 +88,7 @@
     var tickRaw = (shell.getAttribute('data-current-tick') || '').trim();
     var parsedTick = parseInt(tickRaw, 10);
     var hasTick = !isNaN(parsedTick);
-    var state = window._tickBarState || (window._tickBarState = { tick: null, observedAtMs: 0, lastPostUtcMs: null, renderPct: null });
+    var state = window._tickBarState || (window._tickBarState = { tick: null, observedAtMs: 0, lastPostUtcMs: null, renderPct: null, lastFrameMs: 0 });
     if (hasTick && state.tick !== parsedTick) {
       state.tick = parsedTick;
       state.observedAtMs = Date.now();
@@ -119,8 +119,9 @@
     }
 
     var tickCycleMs = 10000;
+    var nowMs = Date.now();
     var baseMs = state.lastPostUtcMs !== null ? state.lastPostUtcMs : state.observedAtMs;
-    var elapsedMs = Math.max(0, Date.now() - baseMs);
+    var elapsedMs = Math.max(0, nowMs - baseMs);
     var phaseMs = elapsedMs % tickCycleMs;
     var targetPct = phaseMs / tickCycleMs;
     if (!(state.renderPct >= 0 && state.renderPct <= 1)) {
@@ -129,8 +130,11 @@
       var delta = targetPct - state.renderPct;
       if (delta > 0.5) delta -= 1;
       else if (delta < -0.5) delta += 1;
-      state.renderPct = (state.renderPct + (delta * 0.18) + 1) % 1;
+      var dtMs = state.lastFrameMs > 0 ? Math.min(nowMs - state.lastFrameMs, 100) : (1000 / 60);
+      var lerpFactor = 1 - Math.pow(1 - 0.18, dtMs / (1000 / 60));
+      state.renderPct = (state.renderPct + (delta * lerpFactor) + 1) % 1;
     }
+    state.lastFrameMs = nowMs;
     fill.style.width = (state.renderPct * 100).toFixed(1) + '%';
 
     var toNext = Math.max(0, tickCycleMs - phaseMs);
@@ -537,9 +541,12 @@
 
       var panX = (typeof state.panX === 'number') ? state.panX : 0;
       var panY = (typeof state.panY === 'number') ? state.panY : 0;
+      var cx = state.cssWidth * 0.5;
+      var cy = state.cssHeight * 0.5;
       // Zoom around cursor in screen space.
-      state.panX = mx - ((mx - panX) * (nextZoom / oldZoom));
-      state.panY = my - ((my - panY) * (nextZoom / oldZoom));
+      var ratio = nextZoom / oldZoom;
+      state.panX = (mx - cx) * (1 - ratio) + panX * ratio;
+      state.panY = (my - cy) * (1 - ratio) + panY * ratio;
       state.zoom = nextZoom;
 
       window._galaxyMapViewState.panX = state.panX;
@@ -566,10 +573,10 @@
         var cx = state.cssWidth * 0.5;
         var cy = state.cssHeight * 0.5;
         function projectX(x) {
-          return cx + (((x + panX) - cx) * zoom);
+          return cx + ((x - cx) * zoom) + panX;
         }
         function projectY(y) {
-          return cy + (((y + panY) - cy) * zoom);
+          return cy + ((y - cy) * zoom) + panY;
         }
 
         var nearestSystem = null;
@@ -703,15 +710,15 @@
       var cx = cssWidth * 0.5;
       var cy = cssHeight * 0.5;
       function zx(x) { return cx + ((x - cx) * zoom); }
-      function zy(y) { return cy + ((y - cy) * zoom); }
+function zy(y) { return cy - ((y - cy) * zoom); }
       if (state.layout.lines && state.layout.lines.length > 0) {
         ctx.strokeStyle = 'rgba(122, 176, 248, 0.28)';
         ctx.lineWidth = 1;
         state.layout.lines.forEach(function (line) {
-          var ax = zx(line.a.x + panX);
-          var ay = zy(line.a.y + panY);
-          var bx = zx(line.b.x + panX);
-          var by = zy(line.b.y + panY);
+          var ax = zx(line.a.x) + panX;
+          var ay = zy(line.a.y) + panY;
+          var bx = zx(line.b.x) + panX;
+          var by = zy(line.b.y) + panY;
           ctx.beginPath();
           ctx.moveTo(ax, ay);
           ctx.lineTo(bx, by);
@@ -726,8 +733,8 @@
         var nearestSystem = null;
         var nearestSystemDist = Number.POSITIVE_INFINITY;
         state.layout.systems.forEach(function (s) {
-          var sx = zx(s.point.x + panX);
-          var sy = zy(s.point.y + panY);
+          var sx = zx(s.point.x) + panX;
+          var sy = zy(s.point.y) + panY;
           var dx = gx - sx;
           var dy = gy - sy;
           var d = Math.sqrt(dx * dx + dy * dy);
@@ -753,12 +760,14 @@
           if (empire === 'outerrim' || empire === 'outerrims') return { core: '#8be47a', glow: '139,228,122' };
           return { core: '#6f7f96', glow: '111,127,150' };
         }
+        var landmarkSystems = ['sol', 'krynn', 'haven', 'frontier', 'nexus_prime'];
         state.layout.systems.forEach(function (s) {
-          var sx = zx(s.point.x + panX);
-          var sy = zy(s.point.y + panY);
+          var sx = zx(s.point.x) + panX;
+          var sy = zy(s.point.y) + panY;
           var tint = colorForSystem(s);
-          var r = (s.isCurrent ? 4.6 : 3.3) * Math.max(0.7, Math.min(1.8, zoom));
-          var glowR = (s.isCurrent ? 15 : 10) * Math.max(0.7, Math.min(1.8, zoom));
+          var isLandmark = landmarkSystems.indexOf((s.id || '').trim().toLowerCase()) !== -1;
+          var r = (s.isCurrent ? 4.6 : isLandmark ? 5.2 : 3.3) * Math.max(0.7, Math.min(1.8, zoom));
+          var glowR = (s.isCurrent ? 15 : isLandmark ? 18 : 10) * Math.max(0.7, Math.min(1.8, zoom));
           var glow = ctx.createRadialGradient(sx, sy, 0, sx, sy, glowR);
           glow.addColorStop(0, 'rgba(' + tint.glow + ',' + (s.isCurrent ? '0.40' : '0.26') + ')');
           glow.addColorStop(1, 'rgba(' + tint.glow + ',0)');
@@ -793,7 +802,7 @@
       ctx.strokeStyle = 'rgba(103, 180, 255, 0.6)';
       ctx.lineWidth = 1.2;
       ctx.beginPath();
-      ctx.arc(zx(origin.x + panX), zy(origin.y + panY), 7 * Math.max(0.7, Math.min(1.6, zoom)), 0, Math.PI * 2);
+      ctx.arc(zx(origin.x) + panX, zy(origin.y) + panY, 7 * Math.max(0.7, Math.min(1.6, zoom)), 0, Math.PI * 2);
       ctx.stroke();
 
       drawMapHud(state.currentId || 'Unknown', 'GALAXY MAP');
@@ -1135,7 +1144,12 @@
             : (window._galaxyMapViewState && window._galaxyMapViewState.hasUserZoom && typeof window._galaxyMapViewState.zoom === 'number'
               ? window._galaxyMapViewState.zoom
               : 4.5),
-          dragging: false,
+          dragging: existing ? !!existing.dragging : false,
+          dragMoved: existing ? !!existing.dragMoved : false,
+          dragStartX: existing ? existing.dragStartX : 0,
+          dragStartY: existing ? existing.dragStartY : 0,
+          dragOriginPanX: existing ? existing.dragOriginPanX : 0,
+          dragOriginPanY: existing ? existing.dragOriginPanY : 0,
           currentId: currentId,
           payload: payload,
           galaxyFit: galaxyFit
@@ -1650,6 +1664,26 @@
       window._haltHighlightPendingUntil = 0;
       if (path.endsWith('/api/execute') || path === 'api/execute') {
         window.setExecuteButtonRunning(true);
+      }
+    }
+  });
+
+  document.body.addEventListener('htmx:beforeSwap', function (e) {
+    var detail = (e || {}).detail || {};
+    var elt = detail.elt || null;
+    if (elt &&
+      elt.id === 'state-pane-map' &&
+      elt.classList &&
+      elt.classList.contains('active')) {
+      var mapCanvases = elt.querySelectorAll('.galaxy-map-canvas');
+      var isDraggingMap = Array.prototype.some.call(mapCanvases, function (canvas) {
+        var state = window._galaxyMapStates.get(canvas);
+        return !!(state && state.dragging);
+      });
+      if (isDraggingMap) {
+        // Request was already in-flight when drag started; suppress the swap.
+        detail.shouldSwap = false;
+        return;
       }
     }
   });

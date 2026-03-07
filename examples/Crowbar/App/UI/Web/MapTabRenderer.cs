@@ -80,7 +80,6 @@ internal static class MapTabRenderer
         sb.Append("<canvas class='galaxy-map-canvas galaxy-overview-map-canvas' data-map-mode='galaxy' data-map='")
             .Append(E(payload))
             .AppendLine("'></canvas>");
-        AppendActionOverlay(sb, currentPoi, miningPoi, stationPoi, isDocked);
         sb.AppendLine("</div>");
         sb.AppendLine("<details class='map-context-box' open>");
         sb.AppendLine("<summary>Context</summary>");
