@@ -411,7 +411,8 @@ internal static class DslFuzzyMatcher
             }
 
             sb.AppendLine();
-            File.AppendAllText(AppPaths.GoArgValidationLogFile, sb.ToString());
+            LogSink.Instance.Enqueue(new LogEvent(
+                DateTime.UtcNow, LogKind.GoArgValidation, sb.ToString(), AppPaths.GoArgValidationLogFile));
 
             var dump = new StringBuilder();
             dump.AppendLine($"[{DateTime.UtcNow:O}] go-arg-validation-mapdump");
@@ -425,7 +426,8 @@ internal static class DslFuzzyMatcher
                 diskMap,
                 new JsonSerializerOptions { WriteIndented = true }));
             dump.AppendLine();
-            File.AppendAllText(AppPaths.GoArgValidationMapDumpLogFile, dump.ToString());
+            LogSink.Instance.Enqueue(new LogEvent(
+                DateTime.UtcNow, LogKind.GoArgValidationMapDump, dump.ToString(), AppPaths.GoArgValidationMapDumpLogFile));
         }
         catch
         {

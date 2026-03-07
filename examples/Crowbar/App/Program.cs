@@ -290,6 +290,7 @@ class Program
                         $"{flowLabel} | {label} | llm_apply_failed | provider={currentPlannerProvider} | model={currentPlannerModel} | {ex.GetType().Name}: {ex.Message}");
                 }
 
+
                 return (session, passwordToSave);
             }
             catch (Exception ex)

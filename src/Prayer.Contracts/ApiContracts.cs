@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Text.Json;
 
 namespace Prayer.Contracts;
 
@@ -93,3 +94,7 @@ public sealed record DefaultLlmPreferenceResponse(
 public sealed record UpdateDefaultLlmPreferenceRequest(
     string Provider,
     string Model);
+
+public sealed record SpaceMoltPassthroughRequest(string Command, JsonElement? Payload = null);
+
+public sealed record SpaceMoltPassthroughResponse(bool Succeeded, JsonElement Result, string? Error = null);

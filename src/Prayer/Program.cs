@@ -314,6 +314,33 @@ app.MapPost("/api/runtime/sessions/{id}/commands", (string id, Contracts.Runtime
     return Results.Ok(new Contracts.CommandAckResponse(session.Id, request.Command, message));
 });
 
+app.MapPost("/api/runtime/sessions/{id}/spacemolt/passthrough",
+    async (string id, Contracts.SpaceMoltPassthroughRequest request, RuntimeSessionStore store, CancellationToken cancellationToken) =>
+    {
+        if (!store.TryGet(id, out var session))
+            return Results.NotFound();
+
+        if (string.IsNullOrWhiteSpace(request.Command))
+            return Results.BadRequest("command is required");
+
+        try
+        {
+            var (succeeded, result, error) = await session
+                .ExecuteSpaceMoltCommandAsync(request.Command, request.Payload, cancellationToken);
+
+            return Results.Ok(new Contracts.SpaceMoltPassthroughResponse(succeeded, result, error));
+        }
+        catch (RateLimitStopException)
+        {
+            return Results.StatusCode(429);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Passthrough {Command} failed for session {SessionId}", request.Command, id);
+            return Results.BadRequest($"command failed: {ex.Message}");
+        }
+    });
+
 app.Lifetime.ApplicationStopping.Register(() =>
 {
     var store = app.Services.GetRequiredService<RuntimeSessionStore>();
@@ -692,6 +719,20 @@ internal sealed class PrayerRuntimeSession : IDisposable
     public bool TrySaveExample(out string message)
     {
         return TryApplyCommand(PrayerRuntimeCommandNames.SaveExample, string.Empty, out message);
+    }
+
+    public async Task<(bool Succeeded, JsonElement Result, string? Error)> ExecuteSpaceMoltCommandAsync(
+        string command, JsonElement? payload, CancellationToken ct)
+    {
+        object? payloadObj = payload is { } p &&
+                             p.ValueKind != JsonValueKind.Undefined &&
+                             p.ValueKind != JsonValueKind.Null
+            ? (object?)p
+            : null;
+
+        var result = await Client.ExecuteAsync(command, payloadObj, ct);
+        bool failed = SpaceMoltApiTransport.TryExtractApiError(result, out _, out var error, out _);
+        return (!failed, result, failed ? error : null);
     }
 
     public bool TrySetLlm(string provider, string model, PrayerLlmRegistry registry, out string message)

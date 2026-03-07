@@ -27,6 +27,8 @@ public static class AppPaths
     public static readonly string AstWalkerLogFile = Path.Combine(LogDir, "ast_walker.log");
     public static readonly string GoArgValidationLogFile = Path.Combine(LogDir, "go_arg_validation.log");
     public static readonly string GoArgValidationMapDumpLogFile = Path.Combine(LogDir, "go_arg_validation_mapdump.log");
+    public static readonly string UiHttpErrorLogFile = Path.Combine(LogDir, "ui_http_errors.log");
+    public static readonly string UiHttpTraceLogFile = Path.Combine(LogDir, "ui_http_trace.log");
     public static readonly string ScriptGenerationExamplesFile = Path.Combine(CacheDir, "script_generation_examples.json");
     public static readonly string SeedScriptGenerationExamplesFile = Path.Combine("seed", "script_generation_examples.json");
     public static readonly string SavedBotsFile = Path.Combine(CacheDir, "saved_bots.json");

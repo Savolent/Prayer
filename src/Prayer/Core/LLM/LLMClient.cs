@@ -71,16 +71,16 @@ public class LlamaCppClient : ILLMClient
         return result;
     }
 
-    private async Task LogAsync(string type, string content)
+    private Task LogAsync(string type, string content)
     {
         var sb = new StringBuilder();
-
         sb.AppendLine($"[{DateTime.UtcNow:O}] === {type} ===");
         sb.AppendLine($"Model: {_model}");
         sb.AppendLine(content);
         sb.AppendLine();
 
-        await File.AppendAllTextAsync(_logFile, sb.ToString());
+        LogSink.Instance.Enqueue(new LogEvent(DateTime.UtcNow, LogKind.LlmLog, sb.ToString(), _logFile));
+        return Task.CompletedTask;
     }
 }
 
@@ -159,7 +159,7 @@ public class OpenAIClient : ILLMClient
         }
     }
 
-    private async Task LogAsync(string type, string content)
+    private Task LogAsync(string type, string content)
     {
         var sb = new StringBuilder();
         sb.AppendLine($"[{DateTime.UtcNow:O}] === {type} ===");
@@ -167,7 +167,8 @@ public class OpenAIClient : ILLMClient
         sb.AppendLine(content);
         sb.AppendLine();
 
-        await File.AppendAllTextAsync(_logFile, sb.ToString());
+        LogSink.Instance.Enqueue(new LogEvent(DateTime.UtcNow, LogKind.LlmLog, sb.ToString(), _logFile));
+        return Task.CompletedTask;
     }
 
     private float ResolveTemperatureForModel(float requestedTemperature)
@@ -179,7 +180,7 @@ public class OpenAIClient : ILLMClient
         return requestedTemperature;
     }
 
-    private async Task LogErrorAsync(string type, string content)
+    private Task LogErrorAsync(string type, string content)
     {
         var sb = new StringBuilder();
         sb.AppendLine($"[{DateTime.UtcNow:O}] === {type} ===");
@@ -187,7 +188,8 @@ public class OpenAIClient : ILLMClient
         sb.AppendLine(content);
         sb.AppendLine();
 
-        await File.AppendAllTextAsync(_errorLogFile, sb.ToString());
+        LogSink.Instance.Enqueue(new LogEvent(DateTime.UtcNow, LogKind.LlmError, sb.ToString(), _errorLogFile));
+        return Task.CompletedTask;
     }
 
     private static object[] BuildMessages(string prompt)
@@ -329,7 +331,7 @@ public class GroqClient : ILLMClient
         }
     }
 
-    private async Task LogAsync(string type, string content)
+    private Task LogAsync(string type, string content)
     {
         var sb = new StringBuilder();
         sb.AppendLine($"[{DateTime.UtcNow:O}] === {type} ===");
@@ -337,10 +339,11 @@ public class GroqClient : ILLMClient
         sb.AppendLine(content);
         sb.AppendLine();
 
-        await File.AppendAllTextAsync(_logFile, sb.ToString());
+        LogSink.Instance.Enqueue(new LogEvent(DateTime.UtcNow, LogKind.LlmLog, sb.ToString(), _logFile));
+        return Task.CompletedTask;
     }
 
-    private async Task LogErrorAsync(string type, string content)
+    private Task LogErrorAsync(string type, string content)
     {
         var sb = new StringBuilder();
         sb.AppendLine($"[{DateTime.UtcNow:O}] === {type} ===");
@@ -348,7 +351,8 @@ public class GroqClient : ILLMClient
         sb.AppendLine(content);
         sb.AppendLine();
 
-        await File.AppendAllTextAsync(_errorLogFile, sb.ToString());
+        LogSink.Instance.Enqueue(new LogEvent(DateTime.UtcNow, LogKind.LlmError, sb.ToString(), _errorLogFile));
+        return Task.CompletedTask;
     }
 
     private static object[] OpenAIClientBuildMessages(string prompt)
@@ -511,7 +515,7 @@ public sealed class AnthropicClient : ILLMClient
         }
     }
 
-    private async Task LogAsync(string type, string content)
+    private Task LogAsync(string type, string content)
     {
         var sb = new StringBuilder();
         sb.AppendLine($"[{DateTime.UtcNow:O}] === {type} ===");
@@ -519,10 +523,11 @@ public sealed class AnthropicClient : ILLMClient
         sb.AppendLine(content);
         sb.AppendLine();
 
-        await File.AppendAllTextAsync(_logFile, sb.ToString());
+        LogSink.Instance.Enqueue(new LogEvent(DateTime.UtcNow, LogKind.LlmLog, sb.ToString(), _logFile));
+        return Task.CompletedTask;
     }
 
-    private async Task LogErrorAsync(string type, string content)
+    private Task LogErrorAsync(string type, string content)
     {
         var sb = new StringBuilder();
         sb.AppendLine($"[{DateTime.UtcNow:O}] === {type} ===");
@@ -530,7 +535,8 @@ public sealed class AnthropicClient : ILLMClient
         sb.AppendLine(content);
         sb.AppendLine();
 
-        await File.AppendAllTextAsync(_errorLogFile, sb.ToString());
+        LogSink.Instance.Enqueue(new LogEvent(DateTime.UtcNow, LogKind.LlmError, sb.ToString(), _errorLogFile));
+        return Task.CompletedTask;
     }
 }
 

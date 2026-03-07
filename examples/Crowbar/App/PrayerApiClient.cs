@@ -4,6 +4,7 @@ using System.Globalization;
 using System.Linq;
 using System.Net.Http;
 using System.Net.Http.Json;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Prayer.Contracts;
@@ -128,6 +129,26 @@ public sealed class PrayerApiClient
             throw new InvalidOperationException("Prayer did not return a runtime state snapshot.");
 
         return new AppPrayerRuntimeStatePollResult(DeserializeState(snapshot), stateVersion, true);
+    }
+
+    public async Task<Contracts.SpaceMoltPassthroughResponse> ExecuteSpaceMoltPassthroughAsync(
+        string sessionId,
+        string command,
+        JsonElement? payload = null,
+        CancellationToken cancellationToken = default)
+    {
+        var response = await _http.PostAsJsonAsync(
+            $"api/runtime/sessions/{sessionId}/spacemolt/passthrough",
+            new Contracts.SpaceMoltPassthroughRequest(command, payload),
+            cancellationToken);
+        await EnsureSuccessWithDetailsAsync(response);
+
+        var result = await response.Content.ReadFromJsonAsync<Contracts.SpaceMoltPassthroughResponse>(
+            cancellationToken: cancellationToken);
+        if (result == null)
+            throw new InvalidOperationException("Prayer did not return a passthrough response.");
+
+        return result;
     }
 
     public async Task DeleteSessionAsync(string sessionId)

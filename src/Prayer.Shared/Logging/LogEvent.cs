@@ -1,0 +1,24 @@
+public enum LogKind
+{
+    LlmLog,
+    LlmError,
+    PlannerPrompt,
+    HttpBadRequest,
+    Pathfind,
+    SpaceMoltApi,
+    SpaceMoltApiStats,
+    AuthFlow,
+    AnalyzeMarket,
+    ItemCatalog,
+    CommandExecution,
+    ScriptNormalization,
+    ScriptWriterContext,
+    PromptGenerationPairs,
+    AstWalker,
+    GoArgValidation,
+    GoArgValidationMapDump,
+    UiHttpError,
+    UiHttpTrace
+}
+
+public sealed record LogEvent(DateTime TimestampUtc, LogKind Kind, string Message, string FilePath);

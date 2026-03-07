@@ -2,7 +2,7 @@ using System.Text.Json;
 
 public static class SpaceMoltHttpLogging
 {
-    public static async Task LogBadRequestAsync(string command, object? payload, string rawResponse)
+    public static Task LogBadRequestAsync(string command, object? payload, string rawResponse)
     {
         string payloadText;
 
@@ -21,20 +21,22 @@ public static class SpaceMoltHttpLogging
             $"Payload: {payloadText}\n" +
             $"Response: {rawResponse}\n\n";
 
-        await File.AppendAllTextAsync(AppPaths.HttpBadRequestLogFile, entry);
+        LogSink.Instance.Enqueue(new LogEvent(DateTime.UtcNow, LogKind.HttpBadRequest, entry, AppPaths.HttpBadRequestLogFile));
+        return Task.CompletedTask;
     }
 
-    public static async Task LogPathfindAsync(string targetSystem, JsonElement routeResult)
+    public static Task LogPathfindAsync(string targetSystem, JsonElement routeResult)
     {
         var entry =
             $"[{DateTime.UtcNow:O}] PATHFIND\n" +
             $"TargetSystem: {targetSystem}\n" +
             $"Result: {routeResult.GetRawText()}\n\n";
 
-        await File.AppendAllTextAsync(AppPaths.PathfindLogFile, entry);
+        LogSink.Instance.Enqueue(new LogEvent(DateTime.UtcNow, LogKind.Pathfind, entry, AppPaths.PathfindLogFile));
+        return Task.CompletedTask;
     }
 
-    public static async Task LogApiResponseAsync(
+    public static Task LogApiResponseAsync(
         string command,
         object? payload,
         int statusCode,
@@ -64,20 +66,22 @@ public static class SpaceMoltHttpLogging
             $"HTTP: {statusCode} {reasonPhrase}\n" +
             $"Response: {rawResponse}\n\n";
 
-        await File.AppendAllTextAsync(AppPaths.SpaceMoltApiLogFile, entry);
+        LogSink.Instance.Enqueue(new LogEvent(DateTime.UtcNow, LogKind.SpaceMoltApi, entry, AppPaths.SpaceMoltApiLogFile));
+        return Task.CompletedTask;
     }
 
-    public static async Task LogAnalyzeMarketAsync(string stationId, JsonElement analyzeMarketResult)
+    public static Task LogAnalyzeMarketAsync(string stationId, JsonElement analyzeMarketResult)
     {
         var entry =
             $"[{DateTime.UtcNow:O}] ANALYZE_MARKET\n" +
             $"Station: {stationId}\n" +
             $"Result: {analyzeMarketResult.GetRawText()}\n\n";
 
-        await File.AppendAllTextAsync(AppPaths.AnalyzeMarketLogFile, entry);
+        LogSink.Instance.Enqueue(new LogEvent(DateTime.UtcNow, LogKind.AnalyzeMarket, entry, AppPaths.AnalyzeMarketLogFile));
+        return Task.CompletedTask;
     }
 
-    public static async Task LogItemCatalogAsync(
+    public static Task LogItemCatalogAsync(
         string type,
         string? category,
         string? id,
@@ -93,16 +97,18 @@ public static class SpaceMoltHttpLogging
             $"Params: type={type}, category={category ?? "(null)"}, id={id ?? "(null)"}, page={(page?.ToString() ?? "(null)")}, page_size={(pageSize?.ToString() ?? "(null)")}, search={search ?? "(null)"}\n" +
             $"Payload: {rawPayload}\n\n";
 
-        await File.AppendAllTextAsync(AppPaths.ItemCatalogLogFile, entry);
+        LogSink.Instance.Enqueue(new LogEvent(DateTime.UtcNow, LogKind.ItemCatalog, entry, AppPaths.ItemCatalogLogFile));
+        return Task.CompletedTask;
     }
 
-    public static async Task LogApiCommandStatsAsync(string context, string summary)
+    public static Task LogApiCommandStatsAsync(string context, string summary)
     {
         var entry =
             $"[{DateTime.UtcNow:O}] SPACEMOLT_API_STATS\n" +
             $"Context: {context}\n" +
             $"{summary}\n\n";
 
-        await File.AppendAllTextAsync(AppPaths.SpaceMoltApiStatsLogFile, entry);
+        LogSink.Instance.Enqueue(new LogEvent(DateTime.UtcNow, LogKind.SpaceMoltApiStats, entry, AppPaths.SpaceMoltApiStatsLogFile));
+        return Task.CompletedTask;
     }
 }
