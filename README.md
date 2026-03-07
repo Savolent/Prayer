@@ -18,7 +18,7 @@ Natural language should turn into SpaceMolt gameplay smoothly and execution shou
 
 ## Core idea: natural language -> control language -> gameplay
 
-Prayer is to SpaceMolt what Claude Code is to a codebase — an agent that translates natural language intent into executable behavior at runtime.
+Prayer's scripting engine is to SpaceMolt what Claude Code is to a codebase — an agent that translates natural language intent into executable behavior at runtime.
 
 The analogy is direct:
 
