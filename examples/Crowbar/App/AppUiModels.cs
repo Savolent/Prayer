@@ -5,12 +5,18 @@ public sealed record SpaceUiPoi(
     string Label,
     string Type,
     double? X,
-    double? Y);
+    double? Y,
+    bool HasBase = false,
+    string BaseName = "",
+    int? Online = null,
+    IReadOnlyList<string>? Resources = null);
 
 public sealed record SpaceUiSystemNode(
     string Id,
     double? X,
     double? Y,
+    string Empire,
+    bool IsStronghold,
     bool IsCurrent,
     IReadOnlyList<string> Connections);
 
@@ -59,6 +65,7 @@ public sealed record TradeCatalogItem(
     decimal? GlobalMedianSellPrice);
 
 public sealed record TradeUiModel(
+    bool HasMarket,
     string StationId,
     int Credits,
     int StationCredits,
