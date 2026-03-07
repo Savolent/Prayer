@@ -11,6 +11,20 @@ internal static class TradeTabRenderer
 
         var sb = new StringBuilder();
         sb.AppendLine("<section class='space-page'>");
+        if (!model.HasMarket)
+        {
+            sb.AppendLine("<div class='space-header'>");
+            sb.AppendLine("<h4 class='space-title'>Cargo</h4>");
+            sb.AppendLine("<div class='space-subtitle'>No market data. Showing ship cargo only.</div>");
+            sb.AppendLine("</div>");
+            sb.AppendLine("<section class='space-panel'>");
+            sb.AppendLine("<div class='space-panel-title'>Cargo</div>");
+            AppendInventoryPanel(sb, model.CargoItems, null, null, null, null);
+            sb.AppendLine("</section>");
+            sb.AppendLine("</section>");
+            return sb.ToString();
+        }
+
         sb.AppendLine("<div class='space-header'>");
         sb.Append("<h4 class='space-title'>Trade Terminal • ").Append(E(model.StationId)).AppendLine("</h4>");
         sb.Append("<div class='space-subtitle'>Cargo ")
@@ -30,8 +44,14 @@ internal static class TradeTabRenderer
         sb.AppendLine("</div>");
 
         sb.AppendLine("<div class='space-grid'>");
-        AppendInventoryPanel(sb, "Cargo", model.CargoItems, "sell", "Sell", "stash", "Stash");
-        AppendInventoryPanel(sb, "Storage", model.StorageItems, "retrieve", "Retrieve", null, null);
+        sb.AppendLine("<section class='space-panel'>");
+        sb.AppendLine("<div class='space-panel-title'>Cargo</div>");
+        AppendInventoryPanel(sb, model.CargoItems, "sell", "Sell", "stash", "Stash");
+        sb.AppendLine("</section>");
+        sb.AppendLine("<section class='space-panel'>");
+        sb.AppendLine("<div class='space-panel-title'>Storage</div>");
+        AppendInventoryPanel(sb, model.StorageItems, "retrieve", "Retrieve", null, null);
+        sb.AppendLine("</section>");
         sb.AppendLine("</div>");
 
         sb.AppendLine("<section class='space-panel'>");
@@ -189,15 +209,12 @@ internal static class TradeTabRenderer
 
     private static void AppendInventoryPanel(
         StringBuilder sb,
-        string title,
         System.Collections.Generic.IReadOnlyList<TradeUiItem> items,
-        string primaryCommand,
-        string primaryLabel,
+        string? primaryCommand,
+        string? primaryLabel,
         string? secondaryCommand,
         string? secondaryLabel)
     {
-        sb.AppendLine("<section class='space-panel'>");
-        sb.Append("<div class='space-panel-title'>").Append(E(title)).AppendLine("</div>");
         if (items.Count == 0)
         {
             sb.AppendLine("<div class='small'>(empty)</div>");
@@ -231,7 +248,9 @@ internal static class TradeTabRenderer
                     sb.AppendLine("</div>");
                 }
                 sb.AppendLine("</div>");
-                if (!string.IsNullOrWhiteSpace(item.ItemId))
+                if (!string.IsNullOrWhiteSpace(item.ItemId) &&
+                    !string.IsNullOrWhiteSpace(primaryCommand) &&
+                    !string.IsNullOrWhiteSpace(primaryLabel))
                 {
                     sb.AppendLine("<div class='cargo-actions'>");
                     AppendScriptChip(sb, $"{primaryCommand} {item.ItemId};", primaryLabel);
@@ -243,7 +262,6 @@ internal static class TradeTabRenderer
             }
             sb.AppendLine("</div>");
         }
-        sb.AppendLine("</section>");
     }
 
     private static void AppendStatCard(StringBuilder sb, string label, string value)

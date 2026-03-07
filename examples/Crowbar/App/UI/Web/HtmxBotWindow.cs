@@ -45,6 +45,8 @@ public sealed partial class HtmxBotWindow : IAppUi
         null,
         null,
         null,
+        null,
+        null,
         Array.Empty<BotTab>(),
         null);
 
@@ -133,6 +135,8 @@ public sealed partial class HtmxBotWindow : IAppUi
         string? controlInput,
         int? currentScriptLine,
         string? lastGenerationPrompt,
+        int? currentTick,
+        DateTime? lastSpaceMoltPostUtc,
         IReadOnlyList<BotTab> bots,
         string? activeBotId)
     {
@@ -151,6 +155,8 @@ public sealed partial class HtmxBotWindow : IAppUi
                 controlInput,
                 currentScriptLine,
                 lastGenerationPrompt,
+                currentTick,
+                lastSpaceMoltPostUtc,
                 bots,
                 activeBotId);
         }
@@ -286,6 +292,12 @@ public sealed partial class HtmxBotWindow : IAppUi
         if (req.HttpMethod == "GET" && path == "/partial/right")
         {
             WriteText(ctx.Response, BuildRightPanelHtml(), "text/html; charset=utf-8");
+            return;
+        }
+
+        if (req.HttpMethod == "GET" && path == "/partial/tick-status")
+        {
+            WriteText(ctx.Response, BuildTickStatusHtml(), "text/html; charset=utf-8");
             return;
         }
 
@@ -566,7 +578,7 @@ public sealed partial class HtmxBotWindow : IAppUi
         UiSnapshot snapshot;
         lock (_lock) snapshot = _snapshot;
         var sb = new StringBuilder();
-        var normalizedTab = (tab ?? "space").Trim().ToLowerInvariant();
+        var normalizedTab = (tab ?? "map").Trim().ToLowerInvariant();
         switch (normalizedTab)
         {
             case "trade":
@@ -581,8 +593,9 @@ public sealed partial class HtmxBotWindow : IAppUi
             case "map":
                 sb.Append(MapTabRenderer.Build(snapshot.SpaceModel));
                 break;
+            case "space":
             default:
-                sb.Append(SpaceTabRenderer.Build(snapshot.SpaceModel, snapshot.SpaceConnectedSystems));
+                sb.Append(MapTabRenderer.Build(snapshot.SpaceModel));
                 break;
         }
         return sb.ToString();
@@ -604,6 +617,35 @@ public sealed partial class HtmxBotWindow : IAppUi
         foreach (var line in snapshot.ExecutionStatusLines)
             sb.Append(E(line)).AppendLine();
         sb.AppendLine("</pre></section>");
+        return sb.ToString();
+    }
+
+    private string BuildTickStatusHtml()
+    {
+        UiSnapshot snapshot;
+        lock (_lock) snapshot = _snapshot;
+
+        var sb = new StringBuilder();
+        var tickText = snapshot.CurrentTick.HasValue
+            ? snapshot.CurrentTick.Value.ToString()
+            : "N/A";
+        var lastPostIso = snapshot.LastSpaceMoltPostUtc.HasValue
+            ? snapshot.LastSpaceMoltPostUtc.Value.ToUniversalTime().ToString("O")
+            : string.Empty;
+        var lastPostText = snapshot.LastSpaceMoltPostUtc.HasValue
+            ? $"{Math.Max(0, (int)(DateTime.UtcNow - snapshot.LastSpaceMoltPostUtc.Value).TotalSeconds)}s ago"
+            : "n/a";
+
+        sb.Append("<div class='tick-status-shell' data-current-tick='")
+            .Append(E(tickText))
+            .Append("' data-last-post-utc='")
+            .Append(E(lastPostIso))
+            .AppendLine("'>");
+        sb.AppendLine("<div class='tick-status-track'><div class='tick-status-fill' id='tick-status-fill'></div></div>");
+        sb.Append("<div class='tick-status-meta'><span class='tick-meta-main'>Next in --</span><span class='tick-meta-post'>Last Prayer POST: ")
+            .Append(E(lastPostText))
+            .AppendLine("</span></div>");
+        sb.AppendLine("</div>");
         return sb.ToString();
     }
 
@@ -660,16 +702,37 @@ public sealed partial class HtmxBotWindow : IAppUi
             .OrderBy(n => n, StringComparer.OrdinalIgnoreCase)
             .ToList();
         var (systemNames, poiNames) = LoadMapNameHintsFromCache();
-
-        return JsonSerializer.Serialize(new
+        var payload = new Dictionary<string, object?>
         {
-            commandNames = KnownCommandNames
+            ["commandNames"] = KnownCommandNames
                 .OrderBy(n => n, StringComparer.OrdinalIgnoreCase)
                 .ToList(),
-            scriptHighlightNames = highlightNames,
-            systemHighlightNames = systemNames,
-            poiHighlightNames = poiNames.OrderBy(n => n, StringComparer.OrdinalIgnoreCase).ToList()
-        });
+            ["scriptHighlightNames"] = highlightNames,
+            ["systemHighlightNames"] = systemNames,
+            ["poiHighlightNames"] = poiNames.OrderBy(n => n, StringComparer.OrdinalIgnoreCase).ToList()
+        };
+
+        if (TryLoadGalaxyMapFromCache(out var galaxyMap))
+            payload["galaxyMap"] = galaxyMap;
+
+        return JsonSerializer.Serialize(payload);
+    }
+
+    private static bool TryLoadGalaxyMapFromCache(out JsonElement galaxyMap)
+    {
+        galaxyMap = default;
+        try
+        {
+            if (!File.Exists(AppPaths.GalaxyMapFile))
+                return false;
+            using var doc = JsonDocument.Parse(File.ReadAllText(AppPaths.GalaxyMapFile));
+            galaxyMap = doc.RootElement.Clone();
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     private static IReadOnlyCollection<string> LoadScriptHighlightNamesFromCache()

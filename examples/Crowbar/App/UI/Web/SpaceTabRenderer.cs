@@ -90,15 +90,6 @@ internal static class SpaceTabRenderer
         sb.AppendLine("</section>");
         sb.AppendLine("</div>");
 
-        sb.AppendLine("<section class='space-panel'>");
-        sb.AppendLine("<div class='space-panel-title'>Cargo Items</div>");
-        if (vm.CargoItems.Count > 0)
-        {
-            AppendCargoList(sb, vm.CargoItems);
-            AppendCargoAllActions(sb);
-        }
-        sb.AppendLine("</section>");
-
         sb.AppendLine("</section>");
         return sb.ToString();
     }
@@ -167,44 +158,6 @@ internal static class SpaceTabRenderer
             .Append("<button type='submit' class='space-chip'>")
             .Append(E(label))
             .AppendLine("</button></form>");
-    }
-
-    private static void AppendCargoList(StringBuilder sb, IReadOnlyList<SpaceUiCargoItem> items)
-    {
-        sb.AppendLine("<div class='cargo-list'>");
-        foreach (var item in items)
-        {
-            var itemId = item.ItemId ?? string.Empty;
-            sb.AppendLine("<div class='cargo-row'>");
-            sb.Append("<div class='cargo-item-main'><div class='cargo-label'>")
-                .Append(E($"{itemId} x{item.Quantity}"))
-                .AppendLine("</div>");
-            if (item.MedianPrice.HasValue && item.MedianPrice.Value > 0m)
-            {
-                sb.Append("<div class='cargo-meta'><span class='trade-order-price'>")
-                    .Append(E($"{item.MedianPrice.Value:0.##}cr"))
-                    .AppendLine("</span></div>");
-            }
-            sb.AppendLine("</div>");
-
-            if (!string.IsNullOrWhiteSpace(itemId))
-            {
-                sb.Append("<div class='cargo-actions'>");
-                AppendScriptChip(sb, $"sell {itemId};", "Sell");
-                AppendScriptChip(sb, $"stash {itemId};", "Stash");
-                sb.AppendLine("</div>");
-            }
-            sb.AppendLine("</div>");
-        }
-        sb.AppendLine("</div>");
-    }
-
-    private static void AppendCargoAllActions(StringBuilder sb)
-    {
-        sb.AppendLine("<div class='cargo-all-actions'>");
-        AppendScriptChip(sb, "sell;", "Sell All");
-        AppendScriptChip(sb, "stash;", "Stash All");
-        sb.AppendLine("</div>");
     }
 
     private static void AppendScriptChip(StringBuilder sb, string script, string label)

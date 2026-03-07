@@ -18,9 +18,8 @@ public sealed partial class HtmxBotWindow
 
     private static readonly IReadOnlyList<StateTabDefinition> StateTabs = new[]
     {
-        new StateTabDefinition("space", "Space", "load, every 1000ms", ActiveOnLoad: true),
+        new StateTabDefinition("map", "Map", "load, every 1000ms", ActiveOnLoad: true),
         new StateTabDefinition("missions", "Missions", "load, every 1000ms"),
-        new StateTabDefinition("map", "Map", "load, every 1000ms"),
         new StateTabDefinition("trade", "Trade", "load, every 1000ms"),
         new StateTabDefinition("shipyard", "Shipyard", "load, every 1000ms"),
     };
@@ -121,6 +120,7 @@ public sealed partial class HtmxBotWindow
             {{BuildStatePanesHtml()}}
                 </div>
               </div>
+              <div id='tick-status' class='tick-status' hx-get='partial/tick-status' hx-trigger='load, every 1000ms' hx-swap='innerHTML'></div>
             </div>
             """);
     }
