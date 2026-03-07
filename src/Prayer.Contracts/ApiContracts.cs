@@ -44,7 +44,9 @@ public sealed record RuntimeStateResponse(
     IReadOnlyList<string> ExecutionStatusLines,
     string? ControlInput,
     int? CurrentScriptLine,
-    string? LastGenerationPrompt);
+    string? LastGenerationPrompt,
+    int? CurrentTick,
+    DateTime? LastSpaceMoltPostUtc);
 
 public sealed record SessionSummary(
     string Id,

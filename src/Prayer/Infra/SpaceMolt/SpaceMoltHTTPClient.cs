@@ -41,6 +41,8 @@ public class SpaceMoltHttpClient : IDisposable, IRuntimeTransport
     private long _totalApiCalls;
     private long _totalGetCalls;
     private long _apiCallsSinceLastStatsLog;
+    private DateTime _lastApiCallUtc = DateTime.MinValue;
+    private DateTime _lastMutationPostUtc = DateTime.MinValue;
 
     private static readonly TimeSpan MarketCacheTtl = TimeSpan.FromHours(24);
     private static readonly TimeSpan ShipyardCacheTtl = TimeSpan.FromHours(24);
@@ -419,6 +421,21 @@ public class SpaceMoltHttpClient : IDisposable, IRuntimeTransport
             TopGetCommands: topGetCommands);
     }
 
+    public SpaceMoltRuntimeTelemetrySnapshot GetRuntimeTelemetrySnapshot()
+    {
+        var lastApiCallUtc = _lastApiCallUtc == DateTime.MinValue
+            ? (DateTime?)null
+            : _lastApiCallUtc;
+        var lastMutationPostUtc = _lastMutationPostUtc == DateTime.MinValue
+            ? (DateTime?)null
+            : _lastMutationPostUtc;
+
+        return new SpaceMoltRuntimeTelemetrySnapshot(
+            CurrentTick: Math.Max(0, Volatile.Read(ref _currentTick)),
+            LastApiCallUtc: lastApiCallUtc,
+            LastMutationPostUtc: lastMutationPostUtc);
+    }
+
     internal void SaveMarketCacheToDisk(string stationId, MarketState market)
     {
         _cacheRepository.SaveMarketCacheToDisk(stationId, market);
@@ -618,6 +635,10 @@ public class SpaceMoltHttpClient : IDisposable, IRuntimeTransport
     private void RecordApiCommandObservation(string command, double elapsedMs, bool succeeded)
     {
         var now = DateTime.UtcNow;
+        _lastApiCallUtc = now;
+        if (!command.StartsWith("get_", StringComparison.OrdinalIgnoreCase))
+            _lastMutationPostUtc = now;
+
         var counter = _apiCommandPerf.GetOrAdd(command, _ => new ApiCommandPerfCounter());
         counter.Record(elapsedMs, succeeded, now);
 
@@ -768,3 +789,8 @@ public sealed record SpaceMoltApiCommandStats(
     double AverageElapsedMs,
     double MaxElapsedMs,
     DateTime LastCallUtc);
+
+public sealed record SpaceMoltRuntimeTelemetrySnapshot(
+    int CurrentTick,
+    DateTime? LastApiCallUtc,
+    DateTime? LastMutationPostUtc);

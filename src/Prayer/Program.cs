@@ -622,6 +622,7 @@ internal sealed class PrayerRuntimeSession : IDisposable
         Contracts.RuntimeGameStateDto? state = LatestState == null
             ? null
             : RuntimeStateContractMapper.Map(LatestState);
+        var telemetry = Client.GetRuntimeTelemetrySnapshot();
 
         return new Contracts.RuntimeStateResponse(
             state,
@@ -629,7 +630,9 @@ internal sealed class PrayerRuntimeSession : IDisposable
             GetStatusLines(),
             Agent.CurrentControlInput,
             Agent.CurrentScriptLine,
-            Agent.LastScriptGenerationPrompt);
+            Agent.LastScriptGenerationPrompt,
+            telemetry.CurrentTick > 0 ? telemetry.CurrentTick : null,
+            telemetry.LastMutationPostUtc);
     }
 
     public async Task<bool> WaitForStateChangeAsync(long sinceVersion, int waitMs, CancellationToken cancellationToken)
