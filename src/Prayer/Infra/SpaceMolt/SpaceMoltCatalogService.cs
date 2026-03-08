@@ -211,7 +211,8 @@ internal sealed class SpaceMoltCatalogService
             _recipeCatalogByIdFetchedAtUtc.HasValue)
         {
             var age = DateTime.UtcNow - _recipeCatalogByIdFetchedAtUtc.Value;
-            if (age <= _catalogueCacheTtl)
+            if (age <= _catalogueCacheTtl &&
+                HasRecipeIngredientData(_recipeCatalogByIdCache.Values))
                 return _recipeCatalogByIdCache;
         }
 
@@ -222,7 +223,8 @@ internal sealed class SpaceMoltCatalogService
                 out var diskFetchedAtUtc))
         {
             var age = DateTime.UtcNow - diskFetchedAtUtc;
-            if (age <= _catalogueCacheTtl)
+            if (age <= _catalogueCacheTtl &&
+                HasRecipeIngredientData(diskCached.Values))
             {
                 _recipeCatalogByIdCache = diskCached;
                 _recipeCatalogByIdFetchedAtUtc = diskFetchedAtUtc;
@@ -348,7 +350,10 @@ internal sealed class SpaceMoltCatalogService
             _catalogueCache.TryGetValue(fullCacheFileKey, out var cached))
         {
             var age = DateTime.UtcNow - cached.CachedAtUtc;
-            if (age <= _catalogueCacheTtl && cached.Catalogue.NormalizedEntries.Length > 0)
+            if (age <= _catalogueCacheTtl &&
+                cached.Catalogue.NormalizedEntries.Length > 0 &&
+                (!string.Equals(type, "recipes", StringComparison.OrdinalIgnoreCase) ||
+                 HasRecipeIngredientData(cached.Catalogue.NormalizedEntries)))
                 return cached.Catalogue;
         }
 
@@ -415,5 +420,21 @@ internal sealed class SpaceMoltCatalogService
         }
 
         return map;
+    }
+
+    private static bool HasRecipeIngredientData(IEnumerable<CatalogueEntry> entries)
+    {
+        foreach (var entry in entries ?? Enumerable.Empty<CatalogueEntry>())
+        {
+            if (entry == null)
+                continue;
+
+            if ((entry.Inputs != null && entry.Inputs.Length > 0) ||
+                (entry.Ingredients != null && entry.Ingredients.Length > 0) ||
+                (entry.MaterialsById != null && entry.MaterialsById.Count > 0))
+                return true;
+        }
+
+        return false;
     }
 }

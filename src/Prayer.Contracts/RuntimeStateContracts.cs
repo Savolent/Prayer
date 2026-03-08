@@ -346,4 +346,37 @@ public sealed class RuntimeCatalogueEntryDto
 
     [JsonPropertyName("price")]
     public decimal? Price { get; set; }
+
+    [JsonPropertyName("materials")]
+    public Dictionary<string, int>? MaterialsById { get; set; }
+
+    [JsonPropertyName("ingredients")]
+    public RuntimeRecipeIngredientEntryDto[] Ingredients { get; set; } = Array.Empty<RuntimeRecipeIngredientEntryDto>();
+
+    [JsonPropertyName("inputs")]
+    public RuntimeRecipeIngredientEntryDto[] Inputs { get; set; } = Array.Empty<RuntimeRecipeIngredientEntryDto>();
+}
+
+public sealed class RuntimeRecipeIngredientEntryDto
+{
+    [JsonPropertyName("item_id")]
+    public string ItemId { get; set; } = "";
+
+    [JsonPropertyName("item")]
+    public string Item { get; set; } = "";
+
+    [JsonPropertyName("id")]
+    public string Id { get; set; } = "";
+
+    [JsonPropertyName("name")]
+    public string Name { get; set; } = "";
+
+    [JsonPropertyName("quantity")]
+    public int? Quantity { get; set; }
+
+    [JsonPropertyName("amount")]
+    public int? Amount { get; set; }
+
+    [JsonPropertyName("count")]
+    public int? Count { get; set; }
 }

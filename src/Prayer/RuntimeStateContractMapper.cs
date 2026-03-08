@@ -395,7 +395,30 @@ internal static class RuntimeStateContractMapper
             CargoCapacity = source.CargoCapacity,
             Speed = source.Speed,
             BaseSpeed = source.BaseSpeed,
-            Price = source.Price
+            Price = source.Price,
+            MaterialsById = source.MaterialsById == null
+                ? null
+                : new Dictionary<string, int>(source.MaterialsById, StringComparer.Ordinal),
+            Ingredients = (source.Ingredients ?? Array.Empty<RecipeIngredientEntry>())
+                .Select(Map)
+                .ToArray(),
+            Inputs = (source.Inputs ?? Array.Empty<RecipeIngredientEntry>())
+                .Select(Map)
+                .ToArray()
+        };
+    }
+
+    private static Contracts.RuntimeRecipeIngredientEntryDto Map(RecipeIngredientEntry source)
+    {
+        return new Contracts.RuntimeRecipeIngredientEntryDto
+        {
+            ItemId = source.ItemId,
+            Item = source.Item,
+            Id = source.Id,
+            Name = source.Name,
+            Quantity = source.Quantity,
+            Amount = source.Amount,
+            Count = source.Count
         };
     }
 }

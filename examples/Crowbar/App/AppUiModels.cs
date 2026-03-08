@@ -94,6 +94,7 @@ public sealed record CraftingUiEntry(
     string Name,
     string Category,
     int? Tier,
+    string IngredientsSummary,
     string DisplayText);
 
 public sealed record CraftingUiModel(

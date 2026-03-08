@@ -51,6 +51,7 @@ internal static class CraftingTabRenderer
                 if (recipe.Tier.HasValue)
                     sb.Append(" • T").Append(recipe.Tier.Value);
                 sb.AppendLine("</div>");
+                sb.Append("<div class='cargo-meta'>").Append(E(recipe.IngredientsSummary)).AppendLine("</div>");
                 sb.AppendLine("</div>");
 
                 AppendCraftForm(sb, recipe.RecipeId);

@@ -371,6 +371,7 @@ public static class AppUiStateBuilder
                 string.IsNullOrWhiteSpace(e.Name) ? e.Id : e.Name,
                 string.IsNullOrWhiteSpace(e.Category) ? "Unknown" : e.Category,
                 e.Tier,
+                BuildRecipeIngredientsSummary(state, e),
                 string.IsNullOrWhiteSpace(e.Name) ? e.Id : $"`{e.Id}`: {e.Name}"))
             .ToArray();
 
@@ -378,6 +379,88 @@ public static class AppUiStateBuilder
             state.Docked && recipes.Length > 0,
             state.CurrentPOI?.Id ?? "(unknown)",
             recipes);
+    }
+
+    private static string BuildRecipeIngredientsSummary(GameState state, CatalogueEntry recipe)
+    {
+        var parts = new List<string>();
+
+        if (recipe.Ingredients != null && recipe.Ingredients.Length > 0)
+        {
+            foreach (var ingredient in recipe.Ingredients)
+            {
+                var token = FormatIngredientToken(state, ingredient);
+                if (!string.IsNullOrWhiteSpace(token))
+                    parts.Add(token);
+            }
+        }
+
+        if (recipe.Inputs != null && recipe.Inputs.Length > 0)
+        {
+            foreach (var ingredient in recipe.Inputs)
+            {
+                var token = FormatIngredientToken(state, ingredient);
+                if (!string.IsNullOrWhiteSpace(token))
+                    parts.Add(token);
+            }
+        }
+
+        if (parts.Count == 0 && recipe.MaterialsById != null && recipe.MaterialsById.Count > 0)
+        {
+            foreach (var kvp in recipe.MaterialsById
+                         .Where(kvp => !string.IsNullOrWhiteSpace(kvp.Key) && kvp.Value > 0)
+                         .OrderBy(kvp => kvp.Key, StringComparer.OrdinalIgnoreCase))
+            {
+                var itemName = ResolveCatalogItemName(state, kvp.Key);
+                parts.Add(string.IsNullOrWhiteSpace(itemName)
+                    ? $"{kvp.Key} x{kvp.Value}"
+                    : $"{itemName} x{kvp.Value}");
+            }
+        }
+
+        if (parts.Count == 0)
+            return "Ingredients: (unknown)";
+
+        return "Ingredients: " + string.Join(", ", parts.Distinct(StringComparer.OrdinalIgnoreCase));
+    }
+
+    private static string FormatIngredientToken(GameState state, RecipeIngredientEntry ingredient)
+    {
+        if (ingredient == null)
+            return string.Empty;
+
+        var rawId = !string.IsNullOrWhiteSpace(ingredient.ItemId)
+            ? ingredient.ItemId
+            : !string.IsNullOrWhiteSpace(ingredient.Item)
+                ? ingredient.Item
+                : ingredient.Id;
+        var itemId = (rawId ?? string.Empty).Trim();
+        var itemName = !string.IsNullOrWhiteSpace(ingredient.Name)
+            ? ingredient.Name.Trim()
+            : ResolveCatalogItemName(state, itemId);
+        int qty = ingredient.Quantity ?? ingredient.Amount ?? ingredient.Count ?? 0;
+        if (qty <= 0)
+            qty = 1;
+
+        if (!string.IsNullOrWhiteSpace(itemName))
+            return $"{itemName} x{qty}";
+        if (!string.IsNullOrWhiteSpace(itemId))
+            return $"{itemId} x{qty}";
+        return string.Empty;
+    }
+
+    private static string ResolveCatalogItemName(GameState state, string? itemId)
+    {
+        var id = (itemId ?? string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(id))
+            return string.Empty;
+
+        if (state.Galaxy?.Catalog?.ItemsById != null &&
+            state.Galaxy.Catalog.ItemsById.TryGetValue(id, out var entry) &&
+            !string.IsNullOrWhiteSpace(entry?.Name))
+            return entry.Name.Trim();
+
+        return id;
     }
 
     private static string FormatShowroomLine(ShipyardShowroomEntry entry)
