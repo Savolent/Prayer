@@ -62,12 +62,12 @@ public static class DslParser
             ["uninstall_mod"] = new[] { "mod" },
             ["buy_ship"] = new[] { "ship_class" },
             ["buy_listed_ship"] = new[] { "listing" },
-            ["commission_quote"] = new[] { "ship_class" },
             ["commission_ship"] = new[] { "ship_class" },
             ["accept_mission"] = new[] { "mission_id" },
             ["abandon_mission"] = new[] { "mission_id" },
             ["sell_ship"] = new[] { "ship" },
             ["list_ship_for_sale"] = new[] { "ship", "price" },
+            ["craft"] = new[] { "recipe_id", "count" },
         };
 
     private static readonly IReadOnlyList<ICommand> Commands =
@@ -101,9 +101,52 @@ public static class DslParser
     private static readonly TextParser<string> ArgumentToken =
         ArgIdentifier.Try().Or(Integer);
 
-    private static readonly TextParser<string> ConditionExpression =
-        Span.Regex("[^\\{\\r\\n]+")
-            .Select(x => x.ToStringValue().Trim());
+    // Metric call arg list: zero or more ArgumentTokens separated by commas, inside parens.
+    private static readonly TextParser<string[]> MetricArgList =
+        from _open in Character.EqualTo('(')
+        from args in (
+            from _ws in Ws
+            from first in ArgumentToken
+            from rest in (
+                from _ws2 in Ws
+                from _c in Character.EqualTo(',')
+                from _ws3 in Ws
+                from a in ArgumentToken
+                select a).Many()
+            from _ws4 in Ws
+            select new[] { first }.Concat(rest).ToArray()
+        ).Try().Or(Ws.Select(_ => Array.Empty<string>()))
+        from _close in Character.EqualTo(')')
+        select args;
+
+    // A metric call: IDENTIFIER(args...) — name is uppercased.
+    private static readonly TextParser<(string Name, string[] Args)> MetricCall =
+        from name in Identifier
+        from args in MetricArgList
+        select (name.ToUpperInvariant(), args);
+
+    private static readonly TextParser<DslNumericOperandAstNode> NumericOperand =
+        MetricCall.Try()
+            .Select(c => (DslNumericOperandAstNode)new DslMetricCallOperandAstNode(c.Name, c.Args))
+        .Or(Integer.Select(n => (DslNumericOperandAstNode)new DslIntegerOperandAstNode(int.Parse(n))));
+
+    private static readonly TextParser<string> ComparisonOp =
+        Span.EqualTo(">=").Value(">=").Try()
+        .Or(Span.EqualTo("<=").Value("<=").Try())
+        .Or(Span.EqualTo("==").Value("==").Try())
+        .Or(Span.EqualTo("!=").Value("!=").Try())
+        .Or(Span.EqualTo(">").Value(">").Try())
+        .Or(Span.EqualTo("<").Value("<"));
+
+    internal static readonly TextParser<DslConditionAstNode> ConditionParser =
+        (from left in NumericOperand
+         from _ in Ws
+         from op in ComparisonOp
+         from __ in Ws
+         from right in NumericOperand
+         select (DslConditionAstNode)new DslComparisonConditionAstNode(left, op, right)).Try()
+        .Or(MetricCall.Select(c =>
+            (DslConditionAstNode)new DslMetricCallConditionAstNode(c.Name, c.Args)));
 
     private static readonly TextParser<DslAstNode> CommandAst =
         from commandName in Identifier
@@ -128,26 +171,26 @@ public static class DslParser
     private static readonly TextParser<DslAstNode> IfAst =
         from _if in Span.EqualToIgnoreCase("if").Value(Unit.Value)
         from _ in Ws1
-        from condition in ConditionExpression
+        from condition in ConditionParser
         from __ in Ws
         from _open in Character.EqualTo('{')
         from ___ in Ws
         from body in Superpower.Parse.Ref(() => StatementAst!).Many()
         from ____ in Ws
         from _close in Character.EqualTo('}')
-        select (DslAstNode)new DslIfAstNode(ParseConditionOrThrow(condition), body);
+        select (DslAstNode)new DslIfAstNode(condition, body);
 
     private static readonly TextParser<DslAstNode> UntilAst =
         from _until in Span.EqualToIgnoreCase("until").Value(Unit.Value)
         from _ in Ws1
-        from condition in ConditionExpression
+        from condition in ConditionParser
         from __ in Ws
         from _open in Character.EqualTo('{')
         from ___ in Ws
         from body in Superpower.Parse.Ref(() => StatementAst!).Many()
         from ____ in Ws
         from _close in Character.EqualTo('}')
-        select (DslAstNode)new DslUntilAstNode(ParseConditionOrThrow(condition), body);
+        select (DslAstNode)new DslUntilAstNode(condition, body);
 
     private static readonly TextParser<DslAstNode> StatementAst =
         from statement in UntilAst.Try().Or(IfAst.Try()).Or(RepeatAst.Try()).Or(CommandAst)
@@ -161,16 +204,25 @@ public static class DslParser
             select statement).Many()
         select new DslAstProgram(statements);
 
-    private static DslConditionAstNode ParseConditionOrThrow(string rawCondition)
+    public static bool TryParseCondition(string? text, out DslConditionAstNode? condition, out string? error)
     {
-        if (DslBooleanEvaluator.TryParseCondition(rawCondition, out var condition, out var error) &&
-            condition != null)
+        condition = null;
+        error = null;
+        if (string.IsNullOrWhiteSpace(text))
         {
-            return condition;
+            error = "condition is empty";
+            return false;
         }
 
-        throw new FormatException(
-            $"Invalid condition '{rawCondition}': {error ?? "unknown error"}.");
+        var result = ConditionParser(new TextSpan(text.Trim()));
+        if (!result.HasValue)
+        {
+            error = result.ToString();
+            return false;
+        }
+
+        condition = result.Value;
+        return true;
     }
 
     static DslParser()
@@ -649,21 +701,18 @@ public static class DslParser
         sb.AppendLine("- Blocks are supported via: repeat { ... }");
         sb.AppendLine("- Conditional blocks are supported via: if <CONDITION> { ... }");
         sb.AppendLine("- Until blocks are supported via: until <CONDITION> { ... }");
-        var booleanTokens = DslConditionCatalog.BooleanPredicates
-            .Select(p => p.Name.Trim().ToUpperInvariant())
-            .Where(n => n.Length > 0)
-            .OrderBy(n => n, StringComparer.OrdinalIgnoreCase)
+        var booleanSigs = DslConditionCatalog.BooleanPredicates
+            .OrderBy(p => p.Name, StringComparer.OrdinalIgnoreCase)
+            .Select(p => FormatPredicateSig(p.Name, p.ParamNames))
             .ToList();
-        var numericTokens = DslConditionCatalog.NumericPredicates
-            .Select(p => p.Name.Trim().ToUpperInvariant())
-            .Where(n => n.Length > 0)
-            .OrderBy(n => n, StringComparer.OrdinalIgnoreCase)
+        var numericSigs = DslConditionCatalog.NumericPredicates
+            .OrderBy(p => p.Name, StringComparer.OrdinalIgnoreCase)
+            .Select(p => FormatPredicateSig(p.Name, p.ParamNames))
             .ToList();
-        if (booleanTokens.Count > 0)
-            sb.AppendLine($"- Boolean flag conditions: {string.Join(", ", booleanTokens)}");
-        sb.AppendLine("- Mission condition: MISSION_COMPLETE(<mission_id_prefix>)  // use first 6+ chars");
-        if (numericTokens.Count > 0)
-            sb.AppendLine($"- Numeric conditions support: {string.Join(", ", numericTokens.Select(n => $"{n}()"))}");
+        if (booleanSigs.Count > 0)
+            sb.AppendLine($"- Boolean conditions: {string.Join(", ", booleanSigs)}");
+        if (numericSigs.Count > 0)
+            sb.AppendLine($"- Numeric conditions: {string.Join(", ", numericSigs)}");
         sb.AppendLine("- All commands still end with ';' inside repeat blocks.");
         sb.AppendLine("- Do not add a trailing 'halt;' at script end unless user explicitly asks to stop/pause.");
         sb.AppendLine();
@@ -674,9 +723,8 @@ public static class DslParser
         sb.AppendLine("- if FUEL() > 5 {");
         sb.AppendLine("    go node_alpha;");
         sb.AppendLine("  }");
-        sb.AppendLine("- until MISSION_COMPLETE(012345) {");
-        sb.AppendLine("    mine carbon_ore;");
-        sb.AppendLine("    sell;");
+        sb.AppendLine("- until CARGO(iron_ore) >= 10 {");
+        sb.AppendLine("    mine iron_ore;");
         sb.AppendLine("  }");
         sb.AppendLine();
 
@@ -919,6 +967,11 @@ public static class DslParser
             _ when kind.HasFlag(DslArgKind.Enum) => "option",
             _ => "value"
         };
+
+    private static string FormatPredicateSig(string name, string[] paramNames)
+        => paramNames.Length == 0
+            ? $"{name}()"
+            : $"{name}({string.Join(", ", paramNames.Select(p => $"<{p}>"))})";
 
     private static string ArgKindPattern(DslArgKind kind)
     {

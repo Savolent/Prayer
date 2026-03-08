@@ -922,7 +922,7 @@ public sealed class CommandExecutionEngine
         if (string.IsNullOrWhiteSpace(condition))
             return true;
 
-        return DslBooleanEvaluator.TryParseCondition(condition, out parsed, out _);
+        return DslParser.TryParseCondition(condition, out parsed, out _);
     }
 
     private sealed class ExecutionFrame
