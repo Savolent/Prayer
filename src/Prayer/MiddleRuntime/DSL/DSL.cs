@@ -192,8 +192,11 @@ public static class DslParser
         from _close in Character.EqualTo('}')
         select (DslAstNode)new DslUntilAstNode(condition, body);
 
+    private static readonly TextParser<DslAstNode> StatementCore =
+        input => ParseStatementAst(input);
+
     private static readonly TextParser<DslAstNode> StatementAst =
-        from statement in UntilAst.Try().Or(IfAst.Try()).Or(RepeatAst.Try()).Or(CommandAst)
+        from statement in StatementCore
         from _ in Ws
         select statement;
 
@@ -203,6 +206,43 @@ public static class DslParser
             from statement in StatementAst!
             select statement).Many()
         select new DslAstProgram(statements);
+
+    // Avoid backtracking through command parsing for keyword-led blocks so
+    // parse errors are attributed to the actual failing token/location.
+    private static Result<DslAstNode> ParseStatementAst(TextSpan input)
+    {
+        if (StartsWithKeyword(input, "until", requireWhitespaceAfter: true))
+            return UntilAst(input);
+
+        if (StartsWithKeyword(input, "if", requireWhitespaceAfter: true))
+            return IfAst(input);
+
+        if (StartsWithKeyword(input, "repeat", requireWhitespaceAfter: false))
+            return RepeatAst(input);
+
+        return CommandAst(input);
+    }
+
+    private static bool StartsWithKeyword(TextSpan input, string keyword, bool requireWhitespaceAfter)
+    {
+        if (input.Length < keyword.Length)
+            return false;
+
+        for (int i = 0; i < keyword.Length; i++)
+        {
+            if (char.ToUpperInvariant(input[i]) != char.ToUpperInvariant(keyword[i]))
+                return false;
+        }
+
+        if (input.Length == keyword.Length)
+            return !requireWhitespaceAfter;
+
+        char next = input[keyword.Length];
+        if (requireWhitespaceAfter)
+            return char.IsWhiteSpace(next);
+
+        return char.IsWhiteSpace(next) || next == '{';
+    }
 
     public static bool TryParseCondition(string? text, out DslConditionAstNode? condition, out string? error)
     {

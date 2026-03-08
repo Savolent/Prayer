@@ -26,6 +26,12 @@ internal static class DslBooleanEvaluator
         {
             if (!IsKnownBooleanMetric(call.Name))
             {
+                if (IsKnownNumericMetric(call.Name))
+                {
+                    error = $"unexpected type 'numeric' for predicate '{call.Name}', expected 'boolean'";
+                    return false;
+                }
+
                 error = $"unknown boolean predicate '{call.Name}'";
                 return false;
             }
