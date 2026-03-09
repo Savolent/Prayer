@@ -7,6 +7,7 @@ public static class CommandCatalog
     {
         new MineCommand(),
         new SurveyCommand(),
+        new ExploreCommand(),
         new GoCommand(),
         new AcceptMissionCommand(),
         new AbandonMissionCommand(),
