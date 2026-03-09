@@ -222,13 +222,13 @@ public static class AppUiStateBuilder
             })
             .ToArray();
 
-        var allItems = (state.Galaxy?.Catalog?.ItemsById?.Values ?? Enumerable.Empty<CatalogueEntry>())
+        var allItems = (state.Galaxy?.Catalog?.ItemsById?.Values ?? Enumerable.Empty<ItemCatalogueEntry>())
             .Where(e => e != null && !string.IsNullOrWhiteSpace(e.Id))
             .OrderBy(e => string.IsNullOrWhiteSpace(e.Name) ? e.Id : e.Name, StringComparer.OrdinalIgnoreCase)
             .Select(e => new TradeCatalogItem(
                 e.Id,
                 string.IsNullOrWhiteSpace(e.Name) ? e.Id : e.Name,
-                string.IsNullOrWhiteSpace(e.Category) ? "Unknown" : e.Category,
+                ResolveCatalogCategory(e),
                 e.Tier,
                 HasLocalBuyOrders(state, e.Id),
                 HasLocalSellOrders(state, e.Id),
@@ -290,7 +290,7 @@ public static class AppUiStateBuilder
             .ToArray();
 
         var galaxyShips = state.Galaxy?.Catalog?.ShipsById?.Values
-            ?? Enumerable.Empty<CatalogueEntry>();
+            ?? Enumerable.Empty<ShipCatalogueEntry>();
         var catalogShips = galaxyShips
             .Where(e => e != null && !string.IsNullOrWhiteSpace(e.Id))
             .OrderBy(e => ResolveShipFaction(e), StringComparer.OrdinalIgnoreCase)
@@ -301,7 +301,7 @@ public static class AppUiStateBuilder
                 Faction: ResolveShipFaction(e),
                 Name: string.IsNullOrWhiteSpace(e.Name) ? null : e.Name,
                 ClassId: string.IsNullOrWhiteSpace(e.ClassId) ? e.Class : e.ClassId,
-                Category: string.IsNullOrWhiteSpace(e.Category) ? null : e.Category,
+                Category: ResolveCatalogCategoryNullable(e),
                 Tier: e.Tier,
                 Scale: e.Scale,
                 Hull: e.Hull ?? e.BaseHull,
@@ -315,10 +315,16 @@ public static class AppUiStateBuilder
 
         return new ShipyardUiModel(
             state.CurrentPOI?.Id ?? "(unknown)",
-            state.Credits,
-            state.StorageCredits,
+            string.IsNullOrWhiteSpace(state.Ship.Name) ? "(unnamed ship)" : state.Ship.Name,
+            string.IsNullOrWhiteSpace(state.Ship.ClassId) ? "(unknown class)" : state.Ship.ClassId,
             $"{state.Ship.Fuel}/{state.Ship.MaxFuel}",
+            $"{state.Ship.Hull}/{state.Ship.MaxHull}",
+            $"{state.Ship.Shield}/{state.Ship.MaxShield}",
             $"{state.Ship.CargoUsed}/{state.Ship.CargoCapacity}",
+            (state.Ship.InstalledModules ?? Array.Empty<string>())
+                .Where(m => !string.IsNullOrWhiteSpace(m))
+                .OrderBy(m => m, StringComparer.OrdinalIgnoreCase)
+                .ToArray(),
             "Galaxy",
             totalShips,
             showroom,
@@ -328,29 +334,29 @@ public static class AppUiStateBuilder
 
     private static CatalogUiModel BuildCatalogModel(GameState state)
     {
-        var itemEntries = (state.Galaxy?.Catalog?.ItemsById?.Values ?? Enumerable.Empty<CatalogueEntry>())
+        var itemEntries = (state.Galaxy?.Catalog?.ItemsById?.Values ?? Enumerable.Empty<ItemCatalogueEntry>())
             .Where(e => e != null && !string.IsNullOrWhiteSpace(e.Id))
-            .OrderBy(e => string.IsNullOrWhiteSpace(e.Category) ? "Unknown" : e.Category, StringComparer.OrdinalIgnoreCase)
+            .OrderBy(e => ResolveCatalogCategory(e), StringComparer.OrdinalIgnoreCase)
             .ThenBy(e => e.Tier ?? int.MaxValue)
             .ThenBy(e => string.IsNullOrWhiteSpace(e.Name) ? e.Id : e.Name, StringComparer.OrdinalIgnoreCase)
             .Select(e => new CatalogUiEntry(
                 e.Id,
                 string.IsNullOrWhiteSpace(e.Name) ? e.Id : e.Name,
-                string.IsNullOrWhiteSpace(e.Category) ? "Unknown" : e.Category,
+                ResolveCatalogCategory(e),
                 e.Tier,
                 e.Price,
                 string.IsNullOrWhiteSpace(e.Name) ? e.Id : $"{e.Id} ({e.Name})"))
             .ToArray();
 
-        var shipEntries = (state.Galaxy?.Catalog?.ShipsById?.Values ?? Enumerable.Empty<CatalogueEntry>())
+        var shipEntries = (state.Galaxy?.Catalog?.ShipsById?.Values ?? Enumerable.Empty<ShipCatalogueEntry>())
             .Where(e => e != null && !string.IsNullOrWhiteSpace(e.Id))
-            .OrderBy(e => string.IsNullOrWhiteSpace(e.Category) ? "Unknown" : e.Category, StringComparer.OrdinalIgnoreCase)
+            .OrderBy(e => ResolveCatalogCategory(e), StringComparer.OrdinalIgnoreCase)
             .ThenBy(e => e.Tier ?? int.MaxValue)
             .ThenBy(e => string.IsNullOrWhiteSpace(e.Name) ? e.Id : e.Name, StringComparer.OrdinalIgnoreCase)
             .Select(e => new CatalogUiEntry(
                 e.Id,
                 string.IsNullOrWhiteSpace(e.Name) ? e.Id : e.Name,
-                string.IsNullOrWhiteSpace(e.Category) ? "Unknown" : e.Category,
+                ResolveCatalogCategory(e),
                 e.Tier,
                 e.Price,
                 string.IsNullOrWhiteSpace(e.Name) ? e.Id : $"{e.Id} ({e.Name})"))
@@ -363,13 +369,13 @@ public static class AppUiStateBuilder
     {
         var recipes = (state.AvailableRecipes ?? Array.Empty<CatalogueEntry>())
             .Where(e => e != null && !string.IsNullOrWhiteSpace(e.Id))
-            .OrderBy(e => string.IsNullOrWhiteSpace(e.Category) ? "Unknown" : e.Category, StringComparer.OrdinalIgnoreCase)
+            .OrderBy(e => ResolveCatalogCategory(e), StringComparer.OrdinalIgnoreCase)
             .ThenBy(e => e.Tier ?? int.MaxValue)
             .ThenBy(e => string.IsNullOrWhiteSpace(e.Name) ? e.Id : e.Name, StringComparer.OrdinalIgnoreCase)
             .Select(e => new CraftingUiEntry(
                 e.Id,
                 string.IsNullOrWhiteSpace(e.Name) ? e.Id : e.Name,
-                string.IsNullOrWhiteSpace(e.Category) ? "Unknown" : e.Category,
+                ResolveCatalogCategory(e),
                 e.Tier,
                 BuildRecipeIngredientsSummary(state, e),
                 string.IsNullOrWhiteSpace(e.Name) ? e.Id : $"`{e.Id}`: {e.Name}"))
@@ -493,7 +499,7 @@ public static class AppUiStateBuilder
 
     private static string ResolveShipFaction(CatalogueEntry entry)
     {
-        var category = (entry.Category ?? string.Empty).Trim();
+        var category = ResolveCatalogCategoryNullable(entry);
         if (!string.IsNullOrWhiteSpace(category))
             return category;
 
@@ -509,6 +515,27 @@ public static class AppUiStateBuilder
         return string.IsNullOrWhiteSpace(token)
             ? "Unknown"
             : char.ToUpperInvariant(token[0]) + token[1..];
+    }
+
+    private static string ResolveCatalogCategory(CatalogueEntry entry)
+    {
+        var category = (entry.Category ?? string.Empty).Trim();
+        if (!string.IsNullOrWhiteSpace(category))
+            return category;
+
+        var type = (entry.Type ?? string.Empty).Trim();
+        if (!string.IsNullOrWhiteSpace(type))
+            return type;
+
+        return "Unknown";
+    }
+
+    private static string? ResolveCatalogCategoryNullable(CatalogueEntry entry)
+    {
+        var category = ResolveCatalogCategory(entry);
+        return string.Equals(category, "Unknown", StringComparison.Ordinal)
+            ? null
+            : category;
     }
 
     private static decimal? ResolveMedianBidPrice(GameState state, string itemId)

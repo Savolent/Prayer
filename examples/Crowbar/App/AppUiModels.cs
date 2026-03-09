@@ -119,10 +119,13 @@ public sealed record ShipyardUiEntry(
 
 public sealed record ShipyardUiModel(
     string StationId,
-    int Credits,
-    int StationCredits,
+    string ShipName,
+    string ShipClassId,
     string Fuel,
+    string Hull,
+    string Shield,
     string Cargo,
+    IReadOnlyList<string> InstalledModules,
     string CatalogPage,
     int? TotalShips,
     IReadOnlyList<ShipyardUiEntry> Showroom,

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Text.Json;
 
 public sealed class RuntimeStateBuilder
@@ -50,6 +51,31 @@ public sealed class RuntimeStateBuilder
                 ModuleCount = ship.TryGetProperty("modules", out var modulesEl) && modulesEl.ValueKind == JsonValueKind.Array
                     ? modulesEl.GetArrayLength()
                     : 0,
+                InstalledModules = ship.TryGetProperty("modules", out modulesEl) && modulesEl.ValueKind == JsonValueKind.Array
+                    ? modulesEl
+                        .EnumerateArray()
+                        .Select(module =>
+                        {
+                            if (module.ValueKind == JsonValueKind.String)
+                                return module.GetString() ?? string.Empty;
+                            if (module.ValueKind != JsonValueKind.Object)
+                                return string.Empty;
+
+                            return (module.TryGetProperty("name", out var nameEl) && nameEl.ValueKind == JsonValueKind.String
+                                    ? nameEl.GetString()
+                                    : null)
+                                ?? (module.TryGetProperty("module_id", out var moduleIdEl) && moduleIdEl.ValueKind == JsonValueKind.String
+                                    ? moduleIdEl.GetString()
+                                    : null)
+                                ?? (module.TryGetProperty("id", out var idEl) && idEl.ValueKind == JsonValueKind.String
+                                    ? idEl.GetString()
+                                    : null)
+                                ?? string.Empty;
+                        })
+                        .Where(v => !string.IsNullOrWhiteSpace(v))
+                        .Distinct(StringComparer.OrdinalIgnoreCase)
+                        .ToArray()
+                    : Array.Empty<string>(),
                 Fuel = ship.GetProperty("fuel").GetInt32(),
                 MaxFuel = ship.GetProperty("max_fuel").GetInt32(),
                 Hull = ship.GetProperty("hull").GetInt32(),

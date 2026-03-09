@@ -23,14 +23,37 @@ internal static class ShipyardTabRenderer
         sb.AppendLine("</div>");
 
         sb.AppendLine("<div class='space-stats shipyard-stats'>");
-        AppendStatCard(sb, "Credits", model.Credits.ToString());
-        AppendStatCard(sb, "Station Credits", model.StationCredits.ToString());
+        AppendStatCard(sb, "Ship", model.ShipName);
+        AppendStatCard(sb, "Class", model.ShipClassId);
         AppendStatCard(sb, "Fuel", model.Fuel);
+        AppendStatCard(sb, "Hull", model.Hull);
+        AppendStatCard(sb, "Shield", model.Shield);
         AppendStatCard(sb, "Cargo", model.Cargo);
         AppendStatCard(sb, "Catalog Source", model.CatalogPage);
         if (model.TotalShips.HasValue)
             AppendStatCard(sb, "Total Ships", model.TotalShips.Value.ToString());
         sb.AppendLine("</div>");
+
+        sb.AppendLine("<section class='space-panel'>");
+        sb.Append("<div class='space-panel-title'>Installed Modules (")
+            .Append(model.InstalledModules.Count)
+            .AppendLine(")</div>");
+        if (model.InstalledModules.Count == 0)
+        {
+            sb.AppendLine("<div class='small'>(none)</div>");
+        }
+        else
+        {
+            sb.AppendLine("<div class='catalog-list'>");
+            foreach (var module in model.InstalledModules)
+            {
+                sb.Append("<div class='mission-item shipyard-card'><div class='mission-title'>")
+                    .Append(E(module))
+                    .AppendLine("</div></div>");
+            }
+            sb.AppendLine("</div>");
+        }
+        sb.AppendLine("</section>");
 
         sb.AppendLine("<div class='space-grid'>");
         AppendPanel(sb, "Showroom", model.Showroom, "commission_quote", "Quote", "buy_ship", "Buy");

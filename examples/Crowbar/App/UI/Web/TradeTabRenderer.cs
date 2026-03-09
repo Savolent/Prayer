@@ -19,7 +19,7 @@ internal static class TradeTabRenderer
             sb.AppendLine("</div>");
             sb.AppendLine("<section class='space-panel'>");
             sb.AppendLine("<div class='space-panel-title'>Cargo</div>");
-            AppendInventoryPanel(sb, model.CargoItems, null, null, null, null);
+            AppendInventoryPanel(sb, model.CargoItems, null, null, null, null, includeInstallAction: true);
             sb.AppendLine("</section>");
             sb.AppendLine("</section>");
             return sb.ToString();
@@ -46,11 +46,11 @@ internal static class TradeTabRenderer
         sb.AppendLine("<div class='space-grid'>");
         sb.AppendLine("<section class='space-panel'>");
         sb.AppendLine("<div class='space-panel-title'>Cargo</div>");
-        AppendInventoryPanel(sb, model.CargoItems, "sell", "Sell", "stash", "Stash");
+        AppendInventoryPanel(sb, model.CargoItems, "sell", "Sell", "stash", "Stash", includeInstallAction: true);
         sb.AppendLine("</section>");
         sb.AppendLine("<section class='space-panel'>");
         sb.AppendLine("<div class='space-panel-title'>Storage</div>");
-        AppendInventoryPanel(sb, model.StorageItems, "retrieve", "Retrieve", null, null);
+        AppendInventoryPanel(sb, model.StorageItems, "retrieve", "Retrieve", null, null, includeInstallAction: false);
         sb.AppendLine("</section>");
         sb.AppendLine("</div>");
 
@@ -213,7 +213,8 @@ internal static class TradeTabRenderer
         string? primaryCommand,
         string? primaryLabel,
         string? secondaryCommand,
-        string? secondaryLabel)
+        string? secondaryLabel,
+        bool includeInstallAction)
     {
         if (items.Count == 0)
         {
@@ -248,14 +249,27 @@ internal static class TradeTabRenderer
                     sb.AppendLine("</div>");
                 }
                 sb.AppendLine("</div>");
-                if (!string.IsNullOrWhiteSpace(item.ItemId) &&
+                bool hasPrimaryAction =
+                    !string.IsNullOrWhiteSpace(item.ItemId) &&
                     !string.IsNullOrWhiteSpace(primaryCommand) &&
-                    !string.IsNullOrWhiteSpace(primaryLabel))
+                    !string.IsNullOrWhiteSpace(primaryLabel);
+                bool hasSecondaryAction =
+                    hasPrimaryAction &&
+                    !string.IsNullOrWhiteSpace(secondaryCommand) &&
+                    !string.IsNullOrWhiteSpace(secondaryLabel);
+                bool hasInstallAction =
+                    includeInstallAction &&
+                    !string.IsNullOrWhiteSpace(item.ItemId);
+
+                if (hasPrimaryAction || hasInstallAction)
                 {
                     sb.AppendLine("<div class='cargo-actions'>");
-                    AppendScriptChip(sb, $"{primaryCommand} {item.ItemId};", primaryLabel);
-                    if (!string.IsNullOrWhiteSpace(secondaryCommand) && !string.IsNullOrWhiteSpace(secondaryLabel))
-                        AppendScriptChip(sb, $"{secondaryCommand} {item.ItemId};", secondaryLabel);
+                    if (hasPrimaryAction)
+                        AppendScriptChip(sb, $"{primaryCommand} {item.ItemId};", primaryLabel!);
+                    if (hasSecondaryAction)
+                        AppendScriptChip(sb, $"{secondaryCommand} {item.ItemId};", secondaryLabel!);
+                    if (hasInstallAction)
+                        AppendScriptChip(sb, $"install_mod {item.ItemId};", "Install");
                     sb.AppendLine("</div>");
                 }
                 sb.AppendLine("</div>");

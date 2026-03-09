@@ -72,6 +72,7 @@ public sealed class PlayerShip
     public int PowerUsed { get; set; }
     public int PowerCapacity { get; set; }
     public int ModuleCount { get; set; }
+    public string[] InstalledModules { get; set; } = Array.Empty<string>();
     public int Fuel { get; set; }
     public int MaxFuel { get; set; }
     public int Hull { get; set; }
