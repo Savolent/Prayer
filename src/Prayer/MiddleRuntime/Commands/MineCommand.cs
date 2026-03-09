@@ -7,369 +7,6 @@ using System.Threading.Tasks;
 public class MineCommand : IMultiTurnCommand, IDslCommandGrammar
 {
     private static readonly TimeSpan DepletedWait = TimeSpan.FromSeconds(10);
-
-    public string Name => "mine";
-    public DslCommandSyntax GetDslSyntax() => new(
-        ArgSpecs: new[]
-        {
-            new DslArgumentSpec(
-                DslArgKind.Item,
-                Required: false)
-        });
-
-    private bool _stopRequested;
-    private string? _stopReason;
-    private string? _completionMessage;
-
-    private bool _resourceMode;
-    private string? _resourceId;
-
-    private string? _targetPoiId;
-    private string? _targetSystemId;
-    private Queue<string> _bfsSystems = new();
-    private readonly HashSet<string> _exploredSystems = new(StringComparer.Ordinal);
-    private readonly HashSet<string> _checkedPoiIds = new(StringComparer.Ordinal);
-    private static readonly object ExplorationSync = new();
-    private static readonly Dictionary<string, HashSet<string>> ExhaustedPoisByResource =
-        new(StringComparer.OrdinalIgnoreCase);
-    private static readonly Dictionary<string, HashSet<string>> ExploredSystemsByResource =
-        new(StringComparer.OrdinalIgnoreCase);
-
-    public bool IsAvailable(GameState state)
-        => !string.IsNullOrWhiteSpace(state.System);
-
-    public string BuildHelp(GameState state)
-        => "- mine [resourceId] → mine nearest mineable POI; if resourceId is provided, seek that resource";
-
-    public async Task<(bool finished, CommandExecutionResult? result)> StartAsync(
-        IRuntimeTransport client,
-        CommandResult cmd,
-        GameState state)
-    {
-        ResetState();
-
-        var rawArg = (cmd.Arg1 ?? string.Empty).Trim();
-        _resourceMode = true;
-
-        if (string.IsNullOrWhiteSpace(rawArg))
-        {
-            if (state.CurrentPOI?.IsMiningTarget == true && !string.IsNullOrWhiteSpace(state.CurrentPOI.Id))
-            {
-                _targetSystemId = state.System;
-                _targetPoiId = state.CurrentPOI.Id;
-            }
-            else if (TryResolveNearestKnownTarget(state, out var knownSystem, out var knownPoi))
-            {
-                _targetSystemId = knownSystem;
-                _targetPoiId = knownPoi;
-            }
-            else
-            {
-                InitializeBfsQueue(state);
-            }
-        }
-        else
-        {
-            _resourceId = rawArg;
-            LoadPersistentResourceExploration();
-
-            if (CurrentPoiHasResource(state))
-            {
-                _targetSystemId = state.System;
-                _targetPoiId = state.CurrentPOI.Id;
-            }
-            else if (TryResolveNearestKnownTarget(state, out var knownSystem, out var knownPoi))
-            {
-                _targetSystemId = knownSystem;
-                _targetPoiId = knownPoi;
-            }
-            else
-            {
-                InitializeBfsQueue(state);
-            }
-        }
-
-        var response = await ExecuteStepAsync(client, state);
-
-        if (_stopRequested)
-            return FinishWithStopReason();
-
-        if (!string.IsNullOrWhiteSpace(_completionMessage))
-            return FinishWithCompletionMessage();
-
-        return (false, new CommandExecutionResult
-        {
-            ResultMessage = _stopReason
-                ?? _completionMessage
-                ?? CommandJson.TryGetResultMessage(response)
-                ?? (_resourceMode
-                    ? $"Mining resource `{_resourceId}`..."
-                    : "Mining...")
-        });
-    }
-
-    public async Task<(bool finished, CommandExecutionResult? result)> ContinueAsync(
-        IRuntimeTransport client,
-        GameState state)
-    {
-        if (_stopRequested)
-            return FinishWithStopReason();
-
-        if (!string.IsNullOrWhiteSpace(_completionMessage))
-            return FinishWithCompletionMessage();
-
-        if (_resourceMode)
-        {
-            if (state.Ship.CargoUsed >= state.Ship.CargoCapacity)
-            {
-                _completionMessage = "Mining complete.";
-                return FinishWithCompletionMessage();
-            }
-        }
-
-        var response = await ExecuteStepAsync(client, state);
-
-        if (_stopRequested)
-            return FinishWithStopReason();
-
-        if (!string.IsNullOrWhiteSpace(_completionMessage))
-            return FinishWithCompletionMessage();
-
-        return (false, new CommandExecutionResult
-        {
-            ResultMessage = CommandJson.TryGetResultMessage(response)
-        });
-    }
-
-    private async Task<JsonElement> ExecuteStepAsync(
-        IRuntimeTransport client,
-        GameState state)
-    {
-        return _resourceMode
-            ? await ExecuteResourceStepAsync(client, state)
-            : await ExecuteClassicMineStepAsync(client, state);
-    }
-
-    private async Task<JsonElement> ExecuteClassicMineStepAsync(
-        IRuntimeTransport client,
-        GameState state)
-    {
-        if (!string.IsNullOrWhiteSpace(_targetPoiId) &&
-            !string.Equals(state.CurrentPOI?.Id, _targetPoiId, StringComparison.Ordinal))
-        {
-            if (state.Docked)
-            {
-                await client.ExecuteCommandAsync("undock");
-                return default;
-            }
-
-            await client.ExecuteCommandAsync("travel", new { target_poi = _targetPoiId });
-            return default;
-        }
-
-        if (state.Docked)
-        {
-            await client.ExecuteCommandAsync("undock");
-            return default;
-        }
-
-        JsonElement response = (await client.ExecuteCommandAsync("mine")).Payload;
-        await WaitIfDepletedAsync(response);
-        CaptureStopReasonFromResponse(response);
-        return response;
-    }
-
-    private async Task<JsonElement> ExecuteResourceStepAsync(
-        IRuntimeTransport client,
-        GameState state)
-    {
-        if (state.Ship.CargoUsed >= state.Ship.CargoCapacity)
-        {
-            _completionMessage = "Mining complete.";
-            return default;
-        }
-
-        if (CurrentPoiCanBeMined(state))
-        {
-            if (state.Docked)
-            {
-                await client.ExecuteCommandAsync("undock");
-                return default;
-            }
-
-            JsonElement mineResponse = (await client.ExecuteCommandAsync("mine")).Payload;
-            await WaitIfDepletedAsync(mineResponse);
-            CaptureStopReasonFromResponse(mineResponse);
-            return mineResponse;
-        }
-
-        if (!string.IsNullOrWhiteSpace(_targetPoiId) && !string.IsNullOrWhiteSpace(_targetSystemId))
-            return await ContinueToKnownTargetAsync(client, state);
-
-        return await ContinueBfsExplorationAsync(client, state);
-    }
-
-    private async Task<JsonElement> ContinueToKnownTargetAsync(
-        IRuntimeTransport client,
-        GameState state)
-    {
-        if (!string.Equals(state.System, _targetSystemId, StringComparison.Ordinal))
-        {
-            if (state.Docked)
-            {
-                await client.ExecuteCommandAsync("undock");
-                return default;
-            }
-
-            string? nextHop = await ResolveNextHopAsync(client, state, _targetSystemId!);
-            if (string.IsNullOrWhiteSpace(nextHop))
-            {
-                _targetPoiId = null;
-                _targetSystemId = null;
-                InitializeBfsQueue(state);
-                return default;
-            }
-
-            await client.ExecuteCommandAsync("jump", new { target_system = nextHop });
-            return default;
-        }
-
-        if (string.Equals(state.CurrentPOI.Id, _targetPoiId, StringComparison.Ordinal))
-        {
-            _targetPoiId = null;
-            _targetSystemId = null;
-
-            if (CurrentPoiCanBeMined(state))
-                return default;
-
-            InitializeBfsQueue(state);
-            return default;
-        }
-
-        if (state.Docked)
-        {
-            await client.ExecuteCommandAsync("undock");
-            return default;
-        }
-
-        await client.ExecuteCommandAsync("travel", new { target_poi = _targetPoiId });
-        return default;
-    }
-
-    private async Task<JsonElement> ContinueBfsExplorationAsync(
-        IRuntimeTransport client,
-        GameState state)
-    {
-        var currentMineable = GetCurrentSystemMineablePois(state);
-
-        var uncheckedMineable = currentMineable
-            .Where(p => !_checkedPoiIds.Contains(p.Id))
-            .ToList();
-
-        if (state.CurrentPOI.IsMiningTarget &&
-            !_checkedPoiIds.Contains(state.CurrentPOI.Id))
-        {
-            _checkedPoiIds.Add(state.CurrentPOI.Id);
-            RememberCheckedPoi(state.CurrentPOI.Id);
-            uncheckedMineable = currentMineable
-                .Where(p => !_checkedPoiIds.Contains(p.Id))
-                .ToList();
-        }
-
-        var nextMineablePoi = uncheckedMineable
-            .FirstOrDefault(p => !string.Equals(p.Id, state.CurrentPOI.Id, StringComparison.Ordinal));
-        if (nextMineablePoi != null)
-        {
-            if (state.Docked)
-            {
-                await client.ExecuteCommandAsync("undock");
-                return default;
-            }
-
-            await client.ExecuteCommandAsync("travel", new { target_poi = nextMineablePoi.Id });
-            return default;
-        }
-
-        _exploredSystems.Add(state.System);
-        RememberExploredSystem(state.System);
-
-        while (_bfsSystems.Count > 0)
-        {
-            string candidate = _bfsSystems.Peek();
-
-            if (_exploredSystems.Contains(candidate))
-            {
-                _bfsSystems.Dequeue();
-                continue;
-            }
-
-            if (string.Equals(candidate, state.System, StringComparison.Ordinal))
-                return default;
-
-            if (state.Docked)
-            {
-                await client.ExecuteCommandAsync("undock");
-                return default;
-            }
-
-            string? nextHop = await ResolveNextHopAsync(client, state, candidate);
-            if (string.IsNullOrWhiteSpace(nextHop))
-            {
-                _exploredSystems.Add(candidate);
-                _bfsSystems.Dequeue();
-                continue;
-            }
-
-            await client.ExecuteCommandAsync("jump", new { target_system = nextHop });
-            return default;
-        }
-
-        _completionMessage = string.IsNullOrWhiteSpace(_resourceId)
-            ? "Mining complete: no mineable POI found in explored systems."
-            : $"Mining complete: `{_resourceId}` not found in explored mineable POIs.";
-        return default;
-    }
-
-    private void ResetState()
-    {
-        _stopRequested = false;
-        _stopReason = null;
-        _completionMessage = null;
-
-        _resourceMode = false;
-        _resourceId = null;
-
-        _targetPoiId = null;
-        _targetSystemId = null;
-
-        _bfsSystems = new Queue<string>();
-        _exploredSystems.Clear();
-        _checkedPoiIds.Clear();
-    }
-
-    private (bool finished, CommandExecutionResult? result) FinishWithStopReason()
-    {
-        var reason = _stopReason ?? "Mining stopped.";
-        _stopRequested = false;
-        _stopReason = null;
-
-        return (true, new CommandExecutionResult
-        {
-            ResultMessage = reason
-        });
-    }
-
-    private (bool finished, CommandExecutionResult? result) FinishWithCompletionMessage()
-    {
-        var message = _completionMessage ?? "Mining complete.";
-        _completionMessage = null;
-
-        return (true, new CommandExecutionResult
-        {
-            ResultMessage = message
-        });
-    }
-
     private static readonly HashSet<string> MineablePoiTypes =
         new(StringComparer.Ordinal)
         {
@@ -379,162 +16,217 @@ public class MineCommand : IMultiTurnCommand, IDslCommandGrammar
             "ice_field"
         };
 
-    private void CaptureStopReasonFromResponse(JsonElement response)
+    public string Name => "mine";
+    public DslCommandSyntax GetDslSyntax() => new(
+        ArgSpecs: new[]
+        {
+            new DslArgumentSpec(DslArgKind.Item, Required: false)
+        });
+
+    private string? _resourceId;
+    private bool _stopRequested;
+    private string? _stopReason;
+    private string? _completionMessage;
+    private readonly HashSet<string> _excludedPoiIds = new(StringComparer.Ordinal);
+    private readonly HashSet<string> _excludedSystems = new(StringComparer.Ordinal);
+
+    public bool IsAvailable(GameState state)
+        => !string.IsNullOrWhiteSpace(state.System);
+
+    public string BuildHelp(GameState state)
+        => "- mine [resourceId] → mine at nearest known mineable POI (or nearest known POI for resourceId)";
+
+    public async Task<(bool finished, CommandExecutionResult? result)> StartAsync(
+        IRuntimeTransport client,
+        CommandResult cmd,
+        GameState state)
     {
-        if (!CommandJson.TryGetError(response, out var code, out var message))
-            return;
+        ResetState();
+        _resourceId = string.IsNullOrWhiteSpace(cmd.Arg1) ? null : cmd.Arg1!.Trim();
 
-        if (string.Equals(code, "depleted", StringComparison.OrdinalIgnoreCase))
-            return;
+        JsonElement response = await ExecuteStepAsync(client, state);
 
-        _stopRequested = true;
-        _stopReason = $"Error: {(string.IsNullOrWhiteSpace(code) ? "" : $" ({code})")}: {message ?? "unknown"}";
+        if (_stopRequested)
+            return FinishWithMessage(_stopReason ?? "Mining stopped.");
+        if (!string.IsNullOrWhiteSpace(_completionMessage))
+            return FinishWithMessage(_completionMessage!);
+
+        return (false, new CommandExecutionResult
+        {
+            ResultMessage = CommandJson.TryGetResultMessage(response)
+                ?? BuildProgressMessage()
+        });
     }
 
-    private static Task WaitIfDepletedAsync(JsonElement response)
+    public async Task<(bool finished, CommandExecutionResult? result)> ContinueAsync(
+        IRuntimeTransport client,
+        GameState state)
     {
-        if (CommandJson.TryGetError(response, out var code, out _) &&
-            string.Equals(code, "depleted", StringComparison.OrdinalIgnoreCase))
-        {
-            return Task.Delay(DepletedWait);
-        }
+        if (_stopRequested)
+            return FinishWithMessage(_stopReason ?? "Mining stopped.");
+        if (!string.IsNullOrWhiteSpace(_completionMessage))
+            return FinishWithMessage(_completionMessage!);
 
-        return Task.CompletedTask;
+        JsonElement response = await ExecuteStepAsync(client, state);
+
+        if (_stopRequested)
+            return FinishWithMessage(_stopReason ?? "Mining stopped.");
+        if (!string.IsNullOrWhiteSpace(_completionMessage))
+            return FinishWithMessage(_completionMessage!);
+
+        return (false, new CommandExecutionResult
+        {
+            ResultMessage = CommandJson.TryGetResultMessage(response)
+                ?? BuildProgressMessage()
+        });
     }
 
-    private void InitializeBfsQueue(GameState state)
+    private async Task<JsonElement> ExecuteStepAsync(
+        IRuntimeTransport client,
+        GameState state)
     {
-        var adjacency = BuildAdjacency(state);
-        var visited = new HashSet<string>(StringComparer.Ordinal);
-        var bfsQueue = new Queue<string>();
-        var ordered = new List<string>();
-
-        string root = state.System;
-        if (string.IsNullOrWhiteSpace(root))
+        if (state.Ship.CargoUsed >= state.Ship.CargoCapacity)
         {
-            _bfsSystems = new Queue<string>();
-            return;
+            _completionMessage = "Mining complete.";
+            return default;
         }
 
-        visited.Add(root);
-        bfsQueue.Enqueue(root);
-
-        while (bfsQueue.Count > 0)
+        if (state.Docked)
         {
-            string system = bfsQueue.Dequeue();
-            ordered.Add(system);
+            await client.ExecuteCommandAsync("undock");
+            return default;
+        }
 
-            if (!adjacency.TryGetValue(system, out var neighbors))
+        if (CurrentPoiCanMine(state))
+        {
+            JsonElement mineResponse = (await client.ExecuteCommandAsync("mine")).Payload;
+            await WaitIfDepletedAsync(mineResponse);
+            CaptureStopReasonFromResponse(mineResponse);
+            return mineResponse;
+        }
+
+        if (state.CurrentPOI?.IsMiningTarget == true &&
+            !string.IsNullOrWhiteSpace(state.CurrentPOI.Id))
+        {
+            _excludedPoiIds.Add(state.CurrentPOI.Id);
+        }
+
+        if (!TryResolveNearestKnownTarget(state, out string targetSystemId, out string targetPoiId))
+        {
+            _completionMessage = string.IsNullOrWhiteSpace(_resourceId)
+                ? "Mining complete: no known mineable POI found."
+                : $"Mining complete: no known POI found for `{_resourceId}`.";
+            return default;
+        }
+
+        if (!string.Equals(state.System, targetSystemId, StringComparison.Ordinal))
+        {
+            string? nextHop = await ResolveNextHopAsync(client, state, targetSystemId);
+            if (string.IsNullOrWhiteSpace(nextHop))
+            {
+                _excludedSystems.Add(targetSystemId);
+                return default;
+            }
+
+            await client.ExecuteCommandAsync("jump", new { target_system = nextHop });
+            return default;
+        }
+
+        await client.ExecuteCommandAsync("travel", new { target_poi = targetPoiId });
+        return default;
+    }
+
+    private void ResetState()
+    {
+        _resourceId = null;
+        _stopRequested = false;
+        _stopReason = null;
+        _completionMessage = null;
+        _excludedPoiIds.Clear();
+        _excludedSystems.Clear();
+    }
+
+    private string BuildProgressMessage()
+    {
+        return string.IsNullOrWhiteSpace(_resourceId)
+            ? "Mining nearest known spot..."
+            : $"Mining nearest known `{_resourceId}` spot...";
+    }
+
+    private static async Task<string?> ResolveNextHopAsync(
+        IRuntimeTransport client,
+        GameState state,
+        string targetSystem)
+    {
+        JsonElement routeResult = (await client.FindRouteAsync(targetSystem)).Payload;
+        string? nextHop = TryGetNextHop(routeResult, state.System);
+        if (!string.IsNullOrWhiteSpace(nextHop))
+            return nextHop;
+
+        return state.Systems.Contains(targetSystem, StringComparer.Ordinal)
+            ? targetSystem
+            : null;
+    }
+
+    private static string? TryGetNextHop(JsonElement routeResult, string currentSystem)
+    {
+        foreach (var candidate in ExtractStringRoutes(routeResult))
+        {
+            if (candidate.Count == 0)
                 continue;
 
-            foreach (var neighbor in neighbors)
-            {
-                if (string.IsNullOrWhiteSpace(neighbor))
-                    continue;
-                if (!visited.Add(neighbor))
-                    continue;
-                bfsQueue.Enqueue(neighbor);
-            }
+            var route = candidate
+                .Where(s => !string.IsNullOrWhiteSpace(s))
+                .ToList();
+
+            while (route.Count > 0 && string.Equals(route[0], currentSystem, StringComparison.Ordinal))
+                route.RemoveAt(0);
+
+            if (route.Count > 0)
+                return route[0];
         }
 
-        _bfsSystems = new Queue<string>(ordered);
+        return null;
     }
 
-    private Dictionary<string, List<string>> BuildAdjacency(GameState state)
+    private static IEnumerable<List<string>> ExtractStringRoutes(JsonElement root)
     {
-        var adjacency = new Dictionary<string, List<string>>(StringComparer.Ordinal);
+        if (root.ValueKind != JsonValueKind.Object)
+            yield break;
 
-        void AddEdge(string from, string to)
+        if (!root.TryGetProperty("route", out var routeElement))
+            yield break;
+
+        foreach (var route in ReadStringRouteCandidates(routeElement))
+            yield return route;
+    }
+
+    private static IEnumerable<List<string>> ReadStringRouteCandidates(JsonElement node)
+    {
+        if (node.ValueKind != JsonValueKind.Array)
+            yield break;
+
+        var directRoute = new List<string>();
+        bool hasNested = false;
+
+        foreach (var part in node.EnumerateArray())
         {
-            if (string.IsNullOrWhiteSpace(from) || string.IsNullOrWhiteSpace(to))
-                return;
-
-            if (!adjacency.TryGetValue(from, out var list))
+            if (part.ValueKind == JsonValueKind.String)
             {
-                list = new List<string>();
-                adjacency[from] = list;
+                directRoute.Add(part.GetString() ?? "");
+                continue;
             }
 
-            if (!list.Contains(to, StringComparer.Ordinal))
-                list.Add(to);
-        }
-
-        if (!string.IsNullOrWhiteSpace(state.System))
-        {
-            if (!adjacency.ContainsKey(state.System))
-                adjacency[state.System] = new List<string>();
-
-            foreach (var neighbor in state.Systems ?? Array.Empty<string>())
+            if (part.ValueKind == JsonValueKind.Array)
             {
-                AddEdge(state.System, neighbor);
-                AddEdge(neighbor, state.System);
+                hasNested = true;
+                foreach (var nested in ReadStringRouteCandidates(part))
+                    yield return nested;
             }
         }
 
-        var map = state.Galaxy?.Map;
-        if (map?.Systems != null)
-        {
-            foreach (var system in map.Systems)
-            {
-                if (string.IsNullOrWhiteSpace(system?.Id))
-                    continue;
-
-                if (!adjacency.ContainsKey(system.Id))
-                    adjacency[system.Id] = new List<string>();
-
-                foreach (var neighbor in system.Connections ?? new List<string>())
-                {
-                    AddEdge(system.Id, neighbor);
-                    AddEdge(neighbor, system.Id);
-                }
-            }
-        }
-
-        return adjacency;
-    }
-
-    private static List<POIInfo> GetCurrentSystemMineablePois(GameState state)
-    {
-        var list = new List<POIInfo>();
-
-        if (state.CurrentPOI?.IsMiningTarget == true)
-            list.Add(state.CurrentPOI);
-
-        if (state.POIs != null)
-            list.AddRange(state.POIs.Where(p => p.IsMiningTarget));
-
-        return list
-            .Where(p => !string.IsNullOrWhiteSpace(p.Id))
-            .GroupBy(p => p.Id, StringComparer.Ordinal)
-            .Select(g => g.First())
-            .ToList();
-    }
-
-    private bool CurrentPoiHasResource(GameState state)
-    {
-        if (string.IsNullOrWhiteSpace(_resourceId) || state.CurrentPOI?.IsMiningTarget != true)
-            return false;
-
-        return PoiHasResource(state.CurrentPOI, _resourceId);
-    }
-
-    private bool CurrentPoiCanBeMined(GameState state)
-    {
-        if (state.CurrentPOI?.IsMiningTarget != true)
-            return false;
-
-        return string.IsNullOrWhiteSpace(_resourceId) ||
-               PoiHasResource(state.CurrentPOI, _resourceId!);
-    }
-
-    private static bool PoiHasResource(POIInfo poi, string resourceId)
-    {
-        if (poi?.Resources == null || poi.Resources.Length == 0)
-            return false;
-
-        return poi.Resources.Any(r =>
-            !string.IsNullOrWhiteSpace(r.ResourceId) &&
-            string.Equals(r.ResourceId, resourceId, StringComparison.OrdinalIgnoreCase));
+        if (!hasNested && directRoute.Count > 0)
+            yield return directRoute;
     }
 
     private bool TryResolveNearestKnownTarget(
@@ -545,63 +237,27 @@ public class MineCommand : IMultiTurnCommand, IDslCommandGrammar
         systemId = "";
         poiId = "";
 
-        List<string> poiCandidates;
-        if (string.IsNullOrWhiteSpace(_resourceId))
-        {
-            poiCandidates = GetKnownMineablePoiIds(state)
-                .Where(id => !_checkedPoiIds.Contains(id))
-                .Distinct(StringComparer.Ordinal)
-                .ToList();
-        }
-        else
-        {
-            var resourceIndex = state.Galaxy?.Resources?.PoisByResource;
-            if (resourceIndex == null || resourceIndex.Count == 0)
-                return false;
-
-            string? matchedResourceKey = resourceIndex.Keys
-                .FirstOrDefault(k => string.Equals(k, _resourceId, StringComparison.OrdinalIgnoreCase));
-            if (string.IsNullOrWhiteSpace(matchedResourceKey))
-                return false;
-
-            poiCandidates = resourceIndex[matchedResourceKey]
-                .Where(id => !string.IsNullOrWhiteSpace(id))
-                .Where(id => !_checkedPoiIds.Contains(id))
-                .Distinct(StringComparer.Ordinal)
-                .ToList();
-        }
-
-        if (poiCandidates.Count == 0)
-            return false;
-
-        var poiSystemLookup = new Dictionary<string, string>(StringComparer.Ordinal);
-        if (state.CurrentPOI != null && !string.IsNullOrWhiteSpace(state.CurrentPOI.Id))
-            poiSystemLookup[state.CurrentPOI.Id] = state.System;
-        foreach (var poi in state.POIs ?? Array.Empty<POIInfo>())
-        {
-            if (!string.IsNullOrWhiteSpace(poi.Id))
-                poiSystemLookup[poi.Id] = !string.IsNullOrWhiteSpace(poi.SystemId) ? poi.SystemId : state.System;
-        }
-
-        foreach (var known in state.Galaxy?.Map?.KnownPois ?? new List<GalaxyKnownPoiInfo>())
-        {
-            if (string.IsNullOrWhiteSpace(known.Id) || string.IsNullOrWhiteSpace(known.SystemId))
-                continue;
-            poiSystemLookup[known.Id] = known.SystemId;
-        }
-
+        var poiSystemLookup = BuildPoiSystemLookup(state);
         var distanceBySystem = BuildSystemDistanceIndex(state);
+
+        var candidatePois = GetCandidatePoiIds(state)
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .Where(id => !_excludedPoiIds.Contains(id))
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+
         int bestDistance = int.MaxValue;
         string? bestSystem = null;
         string? bestPoi = null;
 
-        foreach (var candidatePoi in poiCandidates)
+        foreach (var candidatePoi in candidatePois)
         {
-            if (!poiSystemLookup.TryGetValue(candidatePoi, out var candidateSystem) ||
-                string.IsNullOrWhiteSpace(candidateSystem))
-            {
+            if (!poiSystemLookup.TryGetValue(candidatePoi, out var candidateSystem))
                 continue;
-            }
+            if (string.IsNullOrWhiteSpace(candidateSystem))
+                continue;
+            if (_excludedSystems.Contains(candidateSystem))
+                continue;
 
             int distance = distanceBySystem.TryGetValue(candidateSystem, out var d)
                 ? d
@@ -621,6 +277,23 @@ public class MineCommand : IMultiTurnCommand, IDslCommandGrammar
         systemId = bestSystem;
         poiId = bestPoi;
         return true;
+    }
+
+    private IEnumerable<string> GetCandidatePoiIds(GameState state)
+    {
+        if (string.IsNullOrWhiteSpace(_resourceId))
+            return GetKnownMineablePoiIds(state);
+
+        var resourceIndex = state.Galaxy?.Resources?.PoisByResource;
+        if (resourceIndex == null || resourceIndex.Count == 0)
+            return Enumerable.Empty<string>();
+
+        string? key = resourceIndex.Keys.FirstOrDefault(k =>
+            string.Equals(k, _resourceId, StringComparison.OrdinalIgnoreCase));
+        if (string.IsNullOrWhiteSpace(key))
+            return Enumerable.Empty<string>();
+
+        return resourceIndex[key];
     }
 
     private static IEnumerable<string> GetKnownMineablePoiIds(GameState state)
@@ -648,64 +321,49 @@ public class MineCommand : IMultiTurnCommand, IDslCommandGrammar
         return ids;
     }
 
-    private void LoadPersistentResourceExploration()
+    private static Dictionary<string, string> BuildPoiSystemLookup(GameState state)
     {
-        if (string.IsNullOrWhiteSpace(_resourceId))
-            return;
+        var lookup = new Dictionary<string, string>(StringComparer.Ordinal);
 
-        lock (ExplorationSync)
+        if (!string.IsNullOrWhiteSpace(state.CurrentPOI?.Id))
+            lookup[state.CurrentPOI.Id] = state.System;
+
+        foreach (var poi in state.POIs ?? Array.Empty<POIInfo>())
         {
-            if (ExhaustedPoisByResource.TryGetValue(_resourceId, out var checkedPois))
-                _checkedPoiIds.UnionWith(checkedPois);
+            if (string.IsNullOrWhiteSpace(poi?.Id))
+                continue;
 
-            if (ExploredSystemsByResource.TryGetValue(_resourceId, out var exploredSystems))
-                _exploredSystems.UnionWith(exploredSystems);
-        }
-    }
-
-    private void RememberCheckedPoi(string poiId)
-    {
-        if (!_resourceMode ||
-            string.IsNullOrWhiteSpace(_resourceId) ||
-            string.IsNullOrWhiteSpace(poiId))
-        {
-            return;
+            lookup[poi.Id] = string.IsNullOrWhiteSpace(poi.SystemId)
+                ? state.System
+                : poi.SystemId;
         }
 
-        lock (ExplorationSync)
+        foreach (var known in state.Galaxy?.Map?.KnownPois ?? new List<GalaxyKnownPoiInfo>())
         {
-            if (!ExhaustedPoisByResource.TryGetValue(_resourceId, out var checkedPois))
+            if (string.IsNullOrWhiteSpace(known.Id) || string.IsNullOrWhiteSpace(known.SystemId))
+                continue;
+
+            lookup[known.Id] = known.SystemId;
+        }
+
+        foreach (var system in state.Galaxy?.Map?.Systems ?? new List<GalaxySystemInfo>())
+        {
+            if (string.IsNullOrWhiteSpace(system?.Id))
+                continue;
+
+            foreach (var poi in system.Pois ?? new List<GalaxyPoiInfo>())
             {
-                checkedPois = new HashSet<string>(StringComparer.Ordinal);
-                ExhaustedPoisByResource[_resourceId] = checkedPois;
-            }
+                if (string.IsNullOrWhiteSpace(poi?.Id))
+                    continue;
 
-            checkedPois.Add(poiId);
+                lookup[poi.Id] = system.Id;
+            }
         }
+
+        return lookup;
     }
 
-    private void RememberExploredSystem(string systemId)
-    {
-        if (!_resourceMode ||
-            string.IsNullOrWhiteSpace(_resourceId) ||
-            string.IsNullOrWhiteSpace(systemId))
-        {
-            return;
-        }
-
-        lock (ExplorationSync)
-        {
-            if (!ExploredSystemsByResource.TryGetValue(_resourceId, out var exploredSystems))
-            {
-                exploredSystems = new HashSet<string>(StringComparer.Ordinal);
-                ExploredSystemsByResource[_resourceId] = exploredSystems;
-            }
-
-            exploredSystems.Add(systemId);
-        }
-    }
-
-    private Dictionary<string, int> BuildSystemDistanceIndex(GameState state)
+    private static Dictionary<string, int> BuildSystemDistanceIndex(GameState state)
     {
         var distances = new Dictionary<string, int>(StringComparer.Ordinal);
         var adjacency = BuildAdjacency(state);
@@ -720,19 +378,17 @@ public class MineCommand : IMultiTurnCommand, IDslCommandGrammar
         while (queue.Count > 0)
         {
             string system = queue.Dequeue();
-            int currentDistance = distances[system];
+            int baseDistance = distances[system];
 
             if (!adjacency.TryGetValue(system, out var neighbors))
                 continue;
 
             foreach (var neighbor in neighbors)
             {
-                if (string.IsNullOrWhiteSpace(neighbor))
-                    continue;
-                if (distances.ContainsKey(neighbor))
+                if (string.IsNullOrWhiteSpace(neighbor) || distances.ContainsKey(neighbor))
                     continue;
 
-                distances[neighbor] = currentDistance + 1;
+                distances[neighbor] = baseDistance + 1;
                 queue.Enqueue(neighbor);
             }
         }
@@ -740,102 +396,91 @@ public class MineCommand : IMultiTurnCommand, IDslCommandGrammar
         return distances;
     }
 
-    private static async Task<string?> ResolveNextHopAsync(
-        IRuntimeTransport client,
-        GameState state,
-        string targetSystem)
+    private static Dictionary<string, List<string>> BuildAdjacency(GameState state)
     {
-        JsonElement routeResult = (await client.FindRouteAsync(targetSystem)).Payload;
-        string? nextHop = TryGetNextHop(routeResult, state.System, targetSystem);
-        if (!string.IsNullOrWhiteSpace(nextHop))
-            return nextHop;
+        var adjacency = new Dictionary<string, List<string>>(StringComparer.Ordinal);
 
-        return state.Systems.Contains(targetSystem, StringComparer.Ordinal)
-            ? targetSystem
-            : null;
-    }
-
-    private static string? TryGetNextHop(JsonElement routeResult, string currentSystem, string targetSystem)
-    {
-        foreach (var candidate in ExtractStringRoutes(routeResult))
+        void AddEdge(string from, string to)
         {
-            if (candidate.Count == 0)
-                continue;
+            if (string.IsNullOrWhiteSpace(from) || string.IsNullOrWhiteSpace(to))
+                return;
 
-            var route = candidate
-                .Where(s => !string.IsNullOrWhiteSpace(s))
-                .ToList();
-
-            while (route.Count > 0 && string.Equals(route[0], currentSystem, StringComparison.Ordinal))
-                route.RemoveAt(0);
-
-            if (route.Count > 0)
-                return route[0];
-        }
-
-        return null;
-    }
-
-    private static IEnumerable<List<string>> ExtractStringRoutes(JsonElement root)
-    {
-        if (root.ValueKind == JsonValueKind.Array)
-        {
-            var arr = ConvertRouteArrayToSystems(root);
-            if (arr.Count > 0)
-                yield return arr;
-        }
-
-        if (root.ValueKind != JsonValueKind.Object)
-            yield break;
-
-        if (root.TryGetProperty("route", out var route) &&
-            route.ValueKind == JsonValueKind.Array)
-        {
-            var arr = ConvertRouteArrayToSystems(route);
-            if (arr.Count > 0)
-                yield return arr;
-        }
-
-        foreach (var prop in root.EnumerateObject())
-        {
-            if (prop.Value.ValueKind != JsonValueKind.Array)
-                continue;
-
-            var arr = ConvertRouteArrayToSystems(prop.Value);
-            if (arr.Count > 0)
-                yield return arr;
-        }
-    }
-
-    private static List<string> ConvertRouteArrayToSystems(JsonElement routeArray)
-    {
-        var systems = new List<string>();
-
-        foreach (var entry in routeArray.EnumerateArray())
-        {
-            if (entry.ValueKind == JsonValueKind.String)
+            if (!adjacency.TryGetValue(from, out var neighbors))
             {
-                var id = entry.GetString();
-                if (!string.IsNullOrWhiteSpace(id))
-                    systems.Add(id);
-                continue;
+                neighbors = new List<string>();
+                adjacency[from] = neighbors;
             }
 
-            if (entry.ValueKind != JsonValueKind.Object)
+            if (!neighbors.Contains(to, StringComparer.Ordinal))
+                neighbors.Add(to);
+        }
+
+        if (!string.IsNullOrWhiteSpace(state.System))
+            adjacency.TryAdd(state.System, new List<string>());
+
+        foreach (var connected in state.Systems ?? Array.Empty<string>())
+        {
+            AddEdge(state.System, connected);
+            AddEdge(connected, state.System);
+        }
+
+        foreach (var system in state.Galaxy?.Map?.Systems ?? new List<GalaxySystemInfo>())
+        {
+            if (string.IsNullOrWhiteSpace(system?.Id))
                 continue;
 
-            if (entry.TryGetProperty("system_id", out var sid) && sid.ValueKind == JsonValueKind.String)
+            adjacency.TryAdd(system.Id, new List<string>());
+            foreach (var connected in system.Connections ?? new List<string>())
             {
-                var id = sid.GetString();
-                if (!string.IsNullOrWhiteSpace(id))
-                    systems.Add(id!);
+                AddEdge(system.Id, connected);
+                AddEdge(connected, system.Id);
             }
         }
 
-        return systems;
+        return adjacency;
+    }
+
+    private bool CurrentPoiCanMine(GameState state)
+    {
+        if (state.CurrentPOI?.IsMiningTarget != true)
+            return false;
+
+        if (string.IsNullOrWhiteSpace(_resourceId))
+            return true;
+
+        return state.CurrentPOI.Resources.Any(r =>
+            !string.IsNullOrWhiteSpace(r.ResourceId) &&
+            string.Equals(r.ResourceId, _resourceId, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private void CaptureStopReasonFromResponse(JsonElement response)
+    {
+        if (!CommandJson.TryGetError(response, out var code, out var message))
+            return;
+
+        if (string.Equals(code, "depleted", StringComparison.OrdinalIgnoreCase))
+            return;
+
+        _stopRequested = true;
+        _stopReason = $"Error: {(string.IsNullOrWhiteSpace(code) ? "" : $"({code}) ")}{message ?? "unknown"}";
+    }
+
+    private static Task WaitIfDepletedAsync(JsonElement response)
+    {
+        if (CommandJson.TryGetError(response, out var code, out _) &&
+            string.Equals(code, "depleted", StringComparison.OrdinalIgnoreCase))
+        {
+            return Task.Delay(DepletedWait);
+        }
+
+        return Task.CompletedTask;
+    }
+
+    private (bool finished, CommandExecutionResult? result) FinishWithMessage(string message)
+    {
+        _stopRequested = false;
+        _stopReason = null;
+        _completionMessage = null;
+        return (true, new CommandExecutionResult { ResultMessage = message });
     }
 }
-
-// =====================================================
-// HALT (PAUSE AUTONOMY)
-// =====================================================
