@@ -8,6 +8,34 @@ using System.Threading.Tasks;
 
 class Program
 {
+    private static readonly string[] BotColorPalette =
+    {
+        "#ff6b6b", "#ffd166", "#06d6a0", "#4cc9f0", "#90be6d",
+        "#f94144", "#43aa8b", "#577590", "#f8961e", "#3a86ff",
+        "#ff9f1c", "#2ec4b6", "#e76f51", "#8ecae6", "#a7c957",
+        "#ff595e", "#1982c4", "#6a4c93", "#f9844a", "#00bbf9"
+    };
+
+    private static string DeriveBotColorHex(string key)
+    {
+        var normalized = (key ?? string.Empty).Trim().ToLowerInvariant();
+        if (string.IsNullOrWhiteSpace(normalized))
+            return BotColorPalette[0];
+
+        unchecked
+        {
+            uint hash = 2166136261;
+            foreach (var ch in normalized)
+            {
+                hash ^= ch;
+                hash *= 16777619;
+            }
+
+            var index = (int)(hash % (uint)BotColorPalette.Length);
+            return BotColorPalette[index];
+        }
+    }
+
     static async Task Main(string[] args)
     {
         AppPaths.EnsureDirectories();
@@ -83,7 +111,31 @@ class Program
             lock (botLock)
             {
                 return botSessions.Values
-                    .Select(b => new BotTab(b.Id, b.Label))
+                    .Select(b => new BotTab(b.Id, b.Label, b.ColorHex))
+                    .ToList();
+            }
+        }
+
+        IReadOnlyList<BotMapMarker> GetBotMapMarkers()
+        {
+            lock (botLock)
+            {
+                return botSessions.Values
+                    .Select(session =>
+                    {
+                        var systemId = (session.LastPrayerState?.State?.System ?? string.Empty).Trim();
+                        if (string.IsNullOrWhiteSpace(systemId))
+                            return null;
+
+                        return new BotMapMarker(
+                            session.Id,
+                            session.Label,
+                            systemId,
+                            session.ColorHex,
+                            string.Equals(activeBotId, session.Id, StringComparison.Ordinal));
+                    })
+                    .Where(marker => marker != null)
+                    .Cast<BotMapMarker>()
                     .ToList();
             }
         }
@@ -141,6 +193,7 @@ class Program
             GetActiveBotId,
             GetActiveBot,
             GetExecutionStatusLinesForBot,
+            GetBotMapMarkers,
             LogAuth);
         var sessionPollers = new Dictionary<string, (CancellationTokenSource Cts, Task Task)>(StringComparer.Ordinal);
 
@@ -268,7 +321,8 @@ class Program
 
                 var session = new BotSession(
                     Guid.NewGuid().ToString("N"),
-                    label);
+                    label,
+                    DeriveBotColorHex(normalizedUsername));
 
                 session.PrayerSessionId = prayerSessionId;
                 LogAuth($"{flowLabel} | {label} | prayer_session_created | id={session.PrayerSessionId}");
@@ -601,6 +655,7 @@ class Program
                         snapshot.CurrentTick,
                         snapshot.LastSpaceMoltPostUtc,
                         snapshot.Bots,
+                        snapshot.BotMapMarkers,
                         snapshot.ActiveBotId,
                         snapshot.CraftingModel
                     );

@@ -28,6 +28,7 @@ public interface IAppUi
         int? currentTick,
         System.DateTime? lastSpaceMoltPostUtc,
         IReadOnlyList<BotTab> bots,
+        IReadOnlyList<BotMapMarker> botMapMarkers,
         string? activeBotId,
         CraftingUiModel? craftingModel = null);
 

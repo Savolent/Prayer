@@ -46,6 +46,7 @@ public sealed partial class HtmxBotWindow : IAppUi
         null,
         null,
         Array.Empty<BotTab>(),
+        Array.Empty<BotMapMarker>(),
         null);
 
     public HtmxBotWindow(string prefix = "http://localhost:5057/")
@@ -136,6 +137,7 @@ public sealed partial class HtmxBotWindow : IAppUi
         int? currentTick,
         DateTime? lastSpaceMoltPostUtc,
         IReadOnlyList<BotTab> bots,
+        IReadOnlyList<BotMapMarker> botMapMarkers,
         string? activeBotId,
         CraftingUiModel? craftingModel = null)
     {
@@ -157,6 +159,7 @@ public sealed partial class HtmxBotWindow : IAppUi
                 currentTick,
                 lastSpaceMoltPostUtc,
                 bots,
+                botMapMarkers,
                 activeBotId,
                 craftingModel);
         }
@@ -573,7 +576,11 @@ public sealed partial class HtmxBotWindow : IAppUi
             var activeClass = bot.Id == snapshot.ActiveBotId ? " active" : "";
             sb.Append("<form hx-post='api/switch-bot' hx-swap='none'><input type='hidden' name='bot_id' value='")
                 .Append(E(bot.Id)).Append("'><button class='bot-btn").Append(activeClass).Append("' type='submit'>")
-                .Append(E(bot.Label)).AppendLine("</button></form>");
+                .Append("<span class='bot-color-dot' style='background:")
+                .Append(E(bot.ColorHex))
+                .Append("'></span><span>")
+                .Append(E(bot.Label))
+                .AppendLine("</span></button></form>");
         }
         if (snapshot.Bots.Count == 0)
             sb.AppendLine("<div class='small'>(no bots loaded)</div>");
@@ -602,11 +609,11 @@ public sealed partial class HtmxBotWindow : IAppUi
                 sb.Append(MissionsTabRenderer.Build(snapshot.ActiveMissionPrompts, snapshot.AvailableMissionPrompts));
                 break;
             case "map":
-                sb.Append(MapTabRenderer.Build(snapshot.SpaceModel));
+                sb.Append(MapTabRenderer.Build(snapshot.SpaceModel, snapshot.BotMapMarkers));
                 break;
             case "space":
             default:
-                sb.Append(MapTabRenderer.Build(snapshot.SpaceModel));
+                sb.Append(MapTabRenderer.Build(snapshot.SpaceModel, snapshot.BotMapMarkers));
                 break;
         }
         return sb.ToString();

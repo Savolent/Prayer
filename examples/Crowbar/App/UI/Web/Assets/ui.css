@@ -485,9 +485,21 @@ button:hover {
 .bot-list form { margin: 0; }
 
 .bot-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   text-align: left;
   border-color: var(--line-soft);
   background: #111c2b;
+}
+
+.bot-color-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+  display: inline-block;
+  flex: 0 0 auto;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.18);
 }
 
 .bot-btn.active {

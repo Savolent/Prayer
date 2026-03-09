@@ -822,12 +822,19 @@ function zy(y) { return cy - ((y - cy) * zoom); }
           ctx.arc(sx, sy, r, 0, Math.PI * 2);
           ctx.fill();
 
-          if (s.isCurrent) {
-            ctx.strokeStyle = 'rgba(126, 230, 158, 0.95)';
-            ctx.lineWidth = 1.4;
-            ctx.beginPath();
-            ctx.arc(sx, sy, r + 3, 0, Math.PI * 2);
-            ctx.stroke();
+          var markers = Array.isArray(s.botMarkers) ? s.botMarkers : [];
+          if (markers.length > 0) {
+            var ringBase = r + 3.2;
+            markers.slice(0, 5).forEach(function (marker, idx) {
+              ctx.save();
+              ctx.globalAlpha = marker.isActive ? 0.95 : 0.82;
+              ctx.strokeStyle = marker.color || '#7ee69e';
+              ctx.lineWidth = marker.isActive ? 1.8 : 1.4;
+              ctx.beginPath();
+              ctx.arc(sx, sy, ringBase + (idx * 3), 0, Math.PI * 2);
+              ctx.stroke();
+              ctx.restore();
+            });
           }
         });
       }
@@ -1035,6 +1042,11 @@ function zy(y) { return cy - ((y - cy) * zoom); }
       var pois = ((map && (map.Pois || map.pois)) || []).filter(function (p) {
         return getPoiId(p).length > 0;
       });
+      var botMarkers = ((map && (map.BotMarkers || map.botMarkers)) || []).filter(function (m) {
+        if (!m) return false;
+        var systemId = ((m.SystemId || m.systemId) || '').toString().trim();
+        return systemId.length > 0;
+      });
 
       var ctx = canvas.getContext('2d');
       if (!ctx) return;
@@ -1115,6 +1127,7 @@ function zy(y) { return cy - ((y - cy) * zoom); }
         var galaxyScale = galaxyFit.scale;
 
         var byId = {};
+        var byIdLower = {};
         var layoutSystems = galaxySystems.map(function (s) {
           var id = getSystemId(s);
           var x = getX(s);
@@ -1136,7 +1149,29 @@ function zy(y) { return cy - ((y - cy) * zoom); }
               .map(function (cid) { return cid.trim(); })
           };
           byId[id] = entry;
+          byIdLower[id.toLowerCase()] = entry;
           return entry;
+        });
+
+        botMarkers.forEach(function (m) {
+          var markerSystemId = ((m.SystemId || m.systemId) || '').toString().trim();
+          if (!markerSystemId) return;
+          var target = byIdLower[markerSystemId.toLowerCase()];
+          if (!target) return;
+          target.botMarkers = target.botMarkers || [];
+          target.botMarkers.push({
+            botId: ((m.BotId || m.botId) || '').toString().trim(),
+            label: ((m.Label || m.label) || '').toString().trim(),
+            color: ((m.Color || m.color) || '#7ee69e').toString().trim(),
+            isActive: !!(m.IsActive || m.isActive)
+          });
+        });
+        layoutSystems.forEach(function (s) {
+          if (!Array.isArray(s.botMarkers) || s.botMarkers.length === 0) return;
+          s.botMarkers.sort(function (a, b) {
+            if (!!a.isActive === !!b.isActive) return 0;
+            return a.isActive ? -1 : 1;
+          });
         });
 
         var lines = [];

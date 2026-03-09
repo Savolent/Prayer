@@ -4,7 +4,7 @@ using System.Linq;
 using System.Text.Json;
 using System.Threading.Tasks;
 
-public class GoCommand : IMultiTurnCommand, IDslCommandGrammar
+public class GoCommand : IMultiTurnCommand, IDslCommandGrammar, IActiveRouteSource
 {
     public string Name => "go";
     public DslCommandSyntax GetDslSyntax() => new(
@@ -24,6 +24,12 @@ public class GoCommand : IMultiTurnCommand, IDslCommandGrammar
     private string? _resolvedSystemTarget;
     private string? _resolvedPoiTarget;
     private bool _didMoveToTarget;
+
+    private List<string>? _plannedHops;
+    private int _plannedTotalJumps;
+    private int _fuelPerJump;
+    private int _estimatedFuel;
+    private int _fuelAvailable;
 
     public bool IsAvailable(GameState state)
     {
@@ -48,6 +54,7 @@ public class GoCommand : IMultiTurnCommand, IDslCommandGrammar
         _resolvedSystemTarget = null;
         _resolvedPoiTarget = null;
         _didMoveToTarget = false;
+        _plannedHops = null;
 
         if (string.IsNullOrWhiteSpace(_target))
         {
@@ -109,6 +116,7 @@ public class GoCommand : IMultiTurnCommand, IDslCommandGrammar
             _target = null;
             _resolvedSystemTarget = null;
             _resolvedPoiTarget = null;
+            _plannedHops = null;
             return (true, new CommandExecutionResult
             {
                 ResultMessage = $"Invalid go target: {target} is the current POI."
@@ -120,6 +128,7 @@ public class GoCommand : IMultiTurnCommand, IDslCommandGrammar
             _target = null;
             _resolvedSystemTarget = null;
             _resolvedPoiTarget = null;
+            _plannedHops = null;
             return (true, new CommandExecutionResult
             {
                 ResultMessage = _didMoveToTarget
@@ -143,6 +152,7 @@ public class GoCommand : IMultiTurnCommand, IDslCommandGrammar
             _target = null;
             _resolvedSystemTarget = null;
             _resolvedPoiTarget = null;
+            _plannedHops = null;
             _didMoveToTarget = true;
             return (true, new CommandExecutionResult
             {
@@ -158,6 +168,7 @@ public class GoCommand : IMultiTurnCommand, IDslCommandGrammar
         }
 
         JsonElement routeResult = (await client.FindRouteAsync(systemTarget)).Payload;
+        StoreRouteInfo(routeResult, state.System);
         string? nextHop = TryGetNextHop(routeResult, state.System, systemTarget);
 
         if (string.IsNullOrWhiteSpace(nextHop))
@@ -175,6 +186,7 @@ public class GoCommand : IMultiTurnCommand, IDslCommandGrammar
                 _target = null;
                 _resolvedSystemTarget = null;
                 _resolvedPoiTarget = null;
+                _plannedHops = null;
                 return (true, new CommandExecutionResult
                 {
                     ResultMessage = $"No route found from {state.System} to {target} (resolved system: {systemTarget}). Connected systems from here: {connected}."
@@ -188,6 +200,63 @@ public class GoCommand : IMultiTurnCommand, IDslCommandGrammar
         _didMoveToTarget = true;
 
         return (false, null);
+    }
+
+    public ActiveGoRoute? GetActiveRoute()
+    {
+        if (_target == null || _plannedHops == null)
+            return null;
+
+        return new ActiveGoRoute(
+            _resolvedSystemTarget ?? _target,
+            _plannedHops,
+            _plannedTotalJumps,
+            _fuelPerJump,
+            _estimatedFuel,
+            _fuelAvailable);
+    }
+
+    private void StoreRouteInfo(JsonElement routeResult, string currentSystem)
+    {
+        if (routeResult.ValueKind != JsonValueKind.Object)
+        {
+            _plannedHops = null;
+            return;
+        }
+
+        var hops = ExtractFullRoute(routeResult, currentSystem);
+        if (hops == null)
+        {
+            _plannedHops = null;
+            return;
+        }
+
+        _plannedHops = hops;
+        _plannedTotalJumps = routeResult.TryGetProperty("total_jumps", out var tj) && tj.ValueKind == JsonValueKind.Number
+            ? tj.GetInt32() : 0;
+        _fuelPerJump = routeResult.TryGetProperty("fuel_per_jump", out var fpj) && fpj.ValueKind == JsonValueKind.Number
+            ? fpj.GetInt32() : 0;
+        _estimatedFuel = routeResult.TryGetProperty("estimated_fuel", out var ef) && ef.ValueKind == JsonValueKind.Number
+            ? ef.GetInt32() : 0;
+        _fuelAvailable = routeResult.TryGetProperty("fuel_available", out var fa) && fa.ValueKind == JsonValueKind.Number
+            ? fa.GetInt32() : 0;
+    }
+
+    private static List<string>? ExtractFullRoute(JsonElement routeResult, string currentSystem)
+    {
+        foreach (var candidate in ExtractStringRoutes(routeResult))
+        {
+            var route = candidate.Where(s => !string.IsNullOrWhiteSpace(s)).ToList();
+            if (route.Count == 0)
+                continue;
+
+            while (route.Count > 0 && string.Equals(route[0], currentSystem, StringComparison.Ordinal))
+                route.RemoveAt(0);
+
+            return route.Count > 0 ? route : null;
+        }
+
+        return null;
     }
 
     private static async Task<(bool found, string? systemId, string? poiId)> ResolveTargetAsync(

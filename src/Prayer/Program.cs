@@ -656,6 +656,15 @@ internal sealed class PrayerRuntimeSession : IDisposable
             : RuntimeStateContractMapper.Map(LatestState);
         var telemetry = Client.GetRuntimeTelemetrySnapshot();
 
+        var route = Agent.ActiveRoute;
+        Contracts.ActiveGoRouteDto? routeDto = route == null ? null : new(
+            route.Target,
+            route.Hops,
+            route.TotalJumps,
+            route.FuelPerJump,
+            route.EstimatedFuel,
+            route.FuelAvailable);
+
         return new Contracts.RuntimeStateResponse(
             state,
             Agent.GetMemoryList(),
@@ -664,7 +673,8 @@ internal sealed class PrayerRuntimeSession : IDisposable
             Agent.CurrentScriptLine,
             Agent.LastScriptGenerationPrompt,
             telemetry.CurrentTick > 0 ? telemetry.CurrentTick : null,
-            telemetry.LastMutationPostUtc);
+            telemetry.LastMutationPostUtc,
+            routeDto);
     }
 
     public async Task<bool> WaitForStateChangeAsync(long sinceVersion, int waitMs, CancellationToken cancellationToken)

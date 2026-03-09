@@ -239,7 +239,8 @@ public sealed class PrayerApiClient
             snapshot.CurrentScriptLine,
             snapshot.LastGenerationPrompt,
             snapshot.CurrentTick,
-            snapshot.LastSpaceMoltPostUtc);
+            snapshot.LastSpaceMoltPostUtc,
+            snapshot.ActiveRoute);
     }
 }
 
@@ -251,7 +252,8 @@ public sealed record AppPrayerRuntimeState(
     int? CurrentScriptLine,
     string? LastGenerationPrompt,
     int? CurrentTick,
-    DateTime? LastSpaceMoltPostUtc);
+    DateTime? LastSpaceMoltPostUtc,
+    Contracts.ActiveGoRouteDto? ActiveRoute = null);
 
 public sealed record AppPrayerRuntimeStatePollResult(
     AppPrayerRuntimeState? State,

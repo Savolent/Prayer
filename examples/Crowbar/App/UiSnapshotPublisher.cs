@@ -10,6 +10,7 @@ public sealed class UiSnapshotPublisher
     private readonly Func<string?> _getActiveBotId;
     private readonly Func<BotSession?> _getActiveBot;
     private readonly Func<string?, IReadOnlyList<string>> _getExecutionStatusLinesForBot;
+    private readonly Func<IReadOnlyList<BotMapMarker>> _getBotMapMarkers;
     private readonly Action<string> _logAuth;
     private string _lastLoggedBotTabSignature = "";
 
@@ -19,6 +20,7 @@ public sealed class UiSnapshotPublisher
         Func<string?> getActiveBotId,
         Func<BotSession?> getActiveBot,
         Func<string?, IReadOnlyList<string>> getExecutionStatusLinesForBot,
+        Func<IReadOnlyList<BotMapMarker>> getBotMapMarkers,
         Action<string> logAuth)
     {
         _uiWriter = uiWriter;
@@ -26,6 +28,7 @@ public sealed class UiSnapshotPublisher
         _getActiveBotId = getActiveBotId;
         _getActiveBot = getActiveBot;
         _getExecutionStatusLinesForBot = getExecutionStatusLinesForBot;
+        _getBotMapMarkers = getBotMapMarkers;
         _logAuth = logAuth;
     }
 
@@ -64,6 +67,7 @@ public sealed class UiSnapshotPublisher
             null,
             null,
             tabs,
+            _getBotMapMarkers(),
             activeBotId,
             null));
     }
@@ -110,6 +114,7 @@ public sealed class UiSnapshotPublisher
             snapshot.CurrentTick,
             snapshot.LastSpaceMoltPostUtc,
             tabs,
+            _getBotMapMarkers(),
             activeBotId,
             uiState.CraftingModel));
     }

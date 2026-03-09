@@ -7,7 +7,7 @@ using System.Text.Json;
 
 internal static class MapTabRenderer
 {
-    public static string Build(SpaceUiModel? model)
+    public static string Build(SpaceUiModel? model, IReadOnlyList<BotMapMarker>? botMapMarkers = null)
     {
         var vm = model ?? new SpaceUiModel(
             System: string.Empty,
@@ -57,6 +57,16 @@ internal static class MapTabRenderer
                     x = p.X,
                     y = p.Y,
                     isCurrent = string.Equals(p.Target, vm.Poi, StringComparison.OrdinalIgnoreCase)
+                }),
+            botMarkers = (botMapMarkers ?? Array.Empty<BotMapMarker>())
+                .Where(b => b != null && !string.IsNullOrWhiteSpace(b.SystemId))
+                .Select(b => new
+                {
+                    botId = b.BotId,
+                    label = b.Label,
+                    systemId = b.SystemId.Trim(),
+                    color = b.ColorHex,
+                    isActive = b.IsActive
                 })
         });
 

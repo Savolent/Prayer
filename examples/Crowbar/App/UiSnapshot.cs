@@ -17,6 +17,7 @@ public sealed record UiSnapshot(
     int? CurrentTick,
     DateTime? LastSpaceMoltPostUtc,
     IReadOnlyList<BotTab> Bots,
+    IReadOnlyList<BotMapMarker> BotMapMarkers,
     string? ActiveBotId,
     CraftingUiModel? CraftingModel = null
 );

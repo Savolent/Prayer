@@ -73,3 +73,16 @@ public interface IMultiTurnCommand : ICommand
         IRuntimeTransport client,
         GameState state);
 }
+
+public sealed record ActiveGoRoute(
+    string Target,
+    IReadOnlyList<string> Hops,
+    int TotalJumps,
+    int FuelPerJump,
+    int EstimatedFuel,
+    int FuelAvailable);
+
+public interface IActiveRouteSource
+{
+    ActiveGoRoute? GetActiveRoute();
+}

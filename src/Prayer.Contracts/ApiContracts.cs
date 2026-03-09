@@ -39,6 +39,14 @@ public sealed record RuntimeSnapshotResponse(
     int? Credits,
     DateTime LastUpdatedUtc);
 
+public sealed record ActiveGoRouteDto(
+    string Target,
+    IReadOnlyList<string> Hops,
+    int TotalJumps,
+    int FuelPerJump,
+    int EstimatedFuel,
+    int FuelAvailable);
+
 public sealed record RuntimeStateResponse(
     RuntimeGameStateDto? State,
     IReadOnlyList<string> Memory,
@@ -47,7 +55,8 @@ public sealed record RuntimeStateResponse(
     int? CurrentScriptLine,
     string? LastGenerationPrompt,
     int? CurrentTick,
-    DateTime? LastSpaceMoltPostUtc);
+    DateTime? LastSpaceMoltPostUtc,
+    ActiveGoRouteDto? ActiveRoute = null);
 
 public sealed record SessionSummary(
     string Id,
