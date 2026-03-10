@@ -32,13 +32,15 @@ public sealed partial class HtmxBotWindow
         string selectedProvider;
         string selectedModel;
         string currentScript;
+        string? defaultBotId;
 
         lock (_lock)
         {
             providers = _providers.ToList();
             selectedProvider = _selectedProvider;
             selectedModel = _selectedModel;
-            currentScript = _snapshot.ControlInput ?? "";
+            defaultBotId = _snapshot.DefaultBotId;
+            currentScript = GetBotState(_snapshot, null)?.ControlInput ?? "";
         }
 
         if (!providers.Contains(selectedProvider, StringComparer.OrdinalIgnoreCase))
@@ -67,10 +69,11 @@ public sealed partial class HtmxBotWindow
         sb.AppendLine("</head><body><div class='app'><div class='grid'>");
 
         AppendSidebarShellHtml(sb, providers, selectedProvider, selectedModel);
-        AppendStateShellHtml(sb);
+        AppendStateShellHtml(sb, defaultBotId);
         AppendScriptShellHtml(sb, currentScript);
 
         sb.AppendLine("<script>");
+        sb.Append("window._activeBotId = ").Append(defaultBotId != null ? $"'{E(defaultBotId)}'" : "null").AppendLine(";");
         sb.AppendLine(UiJsAsset.Value);
         sb.AppendLine("</script>");
         sb.AppendLine("<script src='assets/ui.js'></script>");
@@ -108,7 +111,7 @@ public sealed partial class HtmxBotWindow
         sb.AppendLine("<button type='submit'>Add Bot</button></form></div></div></div>");
     }
 
-    private void AppendStateShellHtml(StringBuilder sb)
+    private void AppendStateShellHtml(StringBuilder sb, string? defaultBotId)
     {
         UiSnapshot snapshot;
         lock (_lock) snapshot = _snapshot;
@@ -119,7 +122,7 @@ public sealed partial class HtmxBotWindow
               <div id='state-strip-inline' hx-get='partial/state-strip' hx-trigger='load, every 1000ms' hx-swap='innerHTML'></div>
               <div id='state-panel' class='card'>
                 <div id='state-tabs' class='tabs' role='tablist' aria-label='State Sections' hx-get='partial/state-tabs' hx-trigger='load, every 1000ms' hx-swap='innerHTML'>
-            {{BuildStateTabsHtml(snapshot)}}
+            {{BuildStateTabsHtml(snapshot, defaultBotId)}}
                 </div>
                 <div class='tab-content'>
             {{BuildStatePanesHtml()}}
@@ -130,9 +133,9 @@ public sealed partial class HtmxBotWindow
             """);
     }
 
-    private static string BuildStateTabsHtml(UiSnapshot snapshot)
+    private static string BuildStateTabsHtml(UiSnapshot snapshot, string? botId)
     {
-        var visibleTabs = GetVisibleStateTabs(snapshot);
+        var visibleTabs = GetVisibleStateTabs(snapshot, botId);
         return string.Join(
             Environment.NewLine,
             visibleTabs.Select(tab =>
@@ -145,18 +148,21 @@ public sealed partial class HtmxBotWindow
             }));
     }
 
-    private static IReadOnlyList<StateTabDefinition> GetVisibleStateTabs(UiSnapshot snapshot)
+    private static IReadOnlyList<StateTabDefinition> GetVisibleStateTabs(UiSnapshot snapshot, string? botId)
     {
-        var isDocked = IsDocked(snapshot);
+        var isDocked = IsDocked(snapshot, botId);
         return StateTabs
             .Where(tab => !tab.RequiresDocked || isDocked)
             .ToArray();
     }
 
-    private static bool IsDocked(UiSnapshot snapshot)
+    private static bool IsDocked(UiSnapshot snapshot, string? botId)
     {
-        return snapshot.SpaceModel != null &&
-               string.Equals((snapshot.SpaceModel.Docked ?? string.Empty).Trim(), "true", StringComparison.OrdinalIgnoreCase);
+        var id = botId ?? snapshot.DefaultBotId;
+        if (id == null) return false;
+        snapshot.BotStates.TryGetValue(id, out var state);
+        return state?.SpaceModel != null &&
+               string.Equals((state.SpaceModel.Docked ?? string.Empty).Trim(), "true", StringComparison.OrdinalIgnoreCase);
     }
 
     private static string BuildStatePanesHtml()

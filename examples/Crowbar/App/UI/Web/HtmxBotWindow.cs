@@ -20,7 +20,6 @@ public sealed partial class HtmxBotWindow : IAppUi
     private HttpListener? _listener;
 
     private ChannelWriter<RuntimeCommandRequest>? _runtimeCommandWriter;
-    private ChannelWriter<string>? _switchBotWriter;
     private ChannelWriter<AddBotRequest>? _addBotWriter;
     private ChannelWriter<LlmProviderSelection>? _llmSelectionWriter;
     private Func<string, string, Task<string>>? _generateScriptHandler;
@@ -31,20 +30,8 @@ public sealed partial class HtmxBotWindow : IAppUi
     private readonly Dictionary<string, IReadOnlyList<string>> _modelsByProvider =
         new(StringComparer.OrdinalIgnoreCase);
     private UiSnapshot _snapshot = new(
-        null,
-        Array.Empty<string>(),
-        null,
-        null,
-        null,
-        Array.Empty<MissionPromptOption>(),
-        Array.Empty<MissionPromptOption>(),
-        Array.Empty<string>(),
-        Array.Empty<string>(),
-        null,
-        null,
-        null,
-        null,
-        null,
+        new Dictionary<string, BotStateEntry>(StringComparer.Ordinal),
+        Array.Empty<BotRouteOverlay>(),
         Array.Empty<BotTab>(),
         Array.Empty<BotMapMarker>(),
         null);
@@ -58,7 +45,6 @@ public sealed partial class HtmxBotWindow : IAppUi
     }
 
     public void SetRuntimeCommandWriter(ChannelWriter<RuntimeCommandRequest> writer) => _runtimeCommandWriter = writer;
-    public void SetSwitchBotWriter(ChannelWriter<string> writer) => _switchBotWriter = writer;
     public void SetAddBotWriter(ChannelWriter<AddBotRequest> writer) => _addBotWriter = writer;
     public void SetLlmSelectionWriter(ChannelWriter<LlmProviderSelection> writer) => _llmSelectionWriter = writer;
     public void SetGenerateScriptHandler(Func<string, string, Task<string>> handler) => _generateScriptHandler = handler;
@@ -122,46 +108,15 @@ public sealed partial class HtmxBotWindow : IAppUi
     }
 
     public void Render(
-        SpaceUiModel? spaceModel,
-        IReadOnlyList<string> spaceConnectedSystems,
-        TradeUiModel? tradeModel,
-        ShipyardUiModel? shipyardModel,
-        CatalogUiModel? catalogModel,
-        IReadOnlyList<MissionPromptOption> activeMissionPrompts,
-        IReadOnlyList<MissionPromptOption> availableMissionPrompts,
-        IReadOnlyList<string> memory,
-        IReadOnlyList<string> executionStatusLines,
-        string? controlInput,
-        int? currentScriptLine,
-        string? lastGenerationPrompt,
-        int? currentTick,
-        DateTime? lastSpaceMoltPostUtc,
+        IReadOnlyDictionary<string, BotStateEntry> botStates,
+        IReadOnlyList<BotRouteOverlay> botRoutes,
         IReadOnlyList<BotTab> bots,
         IReadOnlyList<BotMapMarker> botMapMarkers,
-        string? activeBotId,
-        CraftingUiModel? craftingModel = null)
+        string? defaultBotId)
     {
         lock (_lock)
         {
-            _snapshot = new UiSnapshot(
-                spaceModel,
-                spaceConnectedSystems,
-                tradeModel,
-                shipyardModel,
-                catalogModel,
-                activeMissionPrompts,
-                availableMissionPrompts,
-                memory,
-                executionStatusLines,
-                controlInput,
-                currentScriptLine,
-                lastGenerationPrompt,
-                currentTick,
-                lastSpaceMoltPostUtc,
-                bots,
-                botMapMarkers,
-                activeBotId,
-                craftingModel);
+            _snapshot = new UiSnapshot(botStates, botRoutes, bots, botMapMarkers, defaultBotId);
         }
     }
 
@@ -241,7 +196,7 @@ public sealed partial class HtmxBotWindow : IAppUi
 
             try
             {
-                ctx.Response.OutputStream.Close();
+                ctx.Response?.OutputStream?.Close();
             }
             catch
             {
@@ -275,40 +230,46 @@ public sealed partial class HtmxBotWindow : IAppUi
 
         if (req.HttpMethod == "GET" && path == "/partial/bots")
         {
-            WriteText(ctx.Response, BuildBotsHtml(), "text/html; charset=utf-8");
+            var botId = req.QueryString["bot_id"];
+            WriteText(ctx.Response, BuildBotsHtml(botId), "text/html; charset=utf-8");
             return;
         }
 
         if (req.HttpMethod == "GET" && path == "/partial/state")
         {
             var tab = req.QueryString["tab"];
-            WriteText(ctx.Response, BuildStateHtml(tab), "text/html; charset=utf-8");
+            var botId = req.QueryString["bot_id"];
+            WriteText(ctx.Response, BuildStateHtml(tab, botId), "text/html; charset=utf-8");
             return;
         }
 
         if (req.HttpMethod == "GET" && path == "/partial/state-tabs")
         {
+            var botId = req.QueryString["bot_id"];
             UiSnapshot snapshot;
             lock (_lock) snapshot = _snapshot;
-            WriteText(ctx.Response, BuildStateTabsHtml(snapshot), "text/html; charset=utf-8");
+            WriteText(ctx.Response, BuildStateTabsHtml(snapshot, botId), "text/html; charset=utf-8");
             return;
         }
 
         if (req.HttpMethod == "GET" && path == "/partial/state-strip")
         {
-            WriteText(ctx.Response, BuildStateStripHtml(), "text/html; charset=utf-8");
+            var botId = req.QueryString["bot_id"];
+            WriteText(ctx.Response, BuildStateStripHtml(botId), "text/html; charset=utf-8");
             return;
         }
 
         if (req.HttpMethod == "GET" && path == "/partial/right")
         {
-            WriteText(ctx.Response, BuildRightPanelHtml(), "text/html; charset=utf-8");
+            var botId = req.QueryString["bot_id"];
+            WriteText(ctx.Response, BuildRightPanelHtml(botId), "text/html; charset=utf-8");
             return;
         }
 
         if (req.HttpMethod == "GET" && path == "/partial/tick-status")
         {
-            WriteText(ctx.Response, BuildTickStatusHtml(), "text/html; charset=utf-8");
+            var botId = req.QueryString["bot_id"];
+            WriteText(ctx.Response, BuildTickStatusHtml(botId), "text/html; charset=utf-8");
             return;
         }
 
@@ -333,7 +294,8 @@ public sealed partial class HtmxBotWindow : IAppUi
 
         if (req.HttpMethod == "GET" && path == "/partial/current-script")
         {
-            WriteText(ctx.Response, BuildCurrentScriptStateJson(), "application/json; charset=utf-8");
+            var botId = req.QueryString["bot_id"];
+            WriteText(ctx.Response, BuildCurrentScriptStateJson(botId), "application/json; charset=utf-8");
             return;
         }
 
@@ -341,21 +303,20 @@ public sealed partial class HtmxBotWindow : IAppUi
         {
             var form = ReadForm(req);
             var prompt = GetValue(form, "prompt");
-            string? activeBotId;
-            lock (_lock) activeBotId = _snapshot.ActiveBotId;
+            var botId = GetValue(form, "bot_id");
             LogUiHttpTrace(
                 "prompt_request_received",
                 req,
                 statusCode: null,
                 elapsedMs: null,
-                details: $"prompt_len={(prompt ?? string.Empty).Length} active_bot={(string.IsNullOrWhiteSpace(activeBotId) ? "none" : "present")}");
+                details: $"prompt_len={(prompt ?? string.Empty).Length} bot={(string.IsNullOrWhiteSpace(botId) ? "none" : "present")}");
             if (string.IsNullOrWhiteSpace(prompt))
             {
                 WriteText(ctx.Response, "Prompt is required.", "text/plain; charset=utf-8", 400);
                 return;
             }
 
-            if (string.IsNullOrWhiteSpace(activeBotId))
+            if (string.IsNullOrWhiteSpace(botId))
             {
                 WriteText(ctx.Response, "No active bot selected.", "text/plain; charset=utf-8", 400);
                 return;
@@ -369,14 +330,14 @@ public sealed partial class HtmxBotWindow : IAppUi
 
             try
             {
-                var generatedScript = _generateScriptHandler(activeBotId!, prompt).GetAwaiter().GetResult();
+                var generatedScript = _generateScriptHandler(botId!, prompt).GetAwaiter().GetResult();
                 LogUiHttpTrace(
                     "prompt_request_generated",
                     req,
                     statusCode: null,
                     elapsedMs: null,
                     details: $"script_len={(generatedScript ?? string.Empty).Length}");
-                WriteText(ctx.Response, generatedScript, "text/plain; charset=utf-8");
+                WriteText(ctx.Response, generatedScript ?? string.Empty, "text/plain; charset=utf-8");
             }
             catch (Exception ex)
             {
@@ -388,23 +349,26 @@ public sealed partial class HtmxBotWindow : IAppUi
 
         if (req.HttpMethod == "POST" && path == "/api/prompt-active-missions")
         {
+            var form = ReadForm(req);
+            var botId = GetValue(form, "bot_id");
             UiSnapshot snapshot;
             lock (_lock) snapshot = _snapshot;
 
-            var prompt = BuildActiveMissionObjectivesPrompt(
-                snapshot.ActiveMissionPrompts);
+            if (string.IsNullOrWhiteSpace(botId))
+            {
+                WriteText(ctx.Response, "No active bot selected.", "text/plain; charset=utf-8", 400);
+                return;
+            }
+
+            snapshot.BotStates.TryGetValue(botId!, out var botState);
+            var activeMissions = botState?.ActiveMissionPrompts ?? Array.Empty<MissionPromptOption>();
+            var prompt = BuildActiveMissionObjectivesPrompt(activeMissions);
             LogUiHttpTrace(
                 "prompt_active_missions_request_received",
                 req,
                 statusCode: null,
                 elapsedMs: null,
-                details: $"prompt_len={(prompt ?? string.Empty).Length} active_bot={(string.IsNullOrWhiteSpace(snapshot.ActiveBotId) ? "none" : "present")}");
-
-            if (string.IsNullOrWhiteSpace(snapshot.ActiveBotId))
-            {
-                WriteText(ctx.Response, "No active bot selected.", "text/plain; charset=utf-8", 400);
-                return;
-            }
+                details: $"prompt_len={(prompt ?? string.Empty).Length} bot={botId}");
 
             if (_generateScriptHandler == null)
             {
@@ -414,14 +378,14 @@ public sealed partial class HtmxBotWindow : IAppUi
 
             try
             {
-                var generatedScript = _generateScriptHandler(snapshot.ActiveBotId!, prompt).GetAwaiter().GetResult();
+                var generatedScript = _generateScriptHandler(botId!, prompt!).GetAwaiter().GetResult();
                 LogUiHttpTrace(
                     "prompt_active_missions_generated",
                     req,
                     statusCode: null,
                     elapsedMs: null,
                     details: $"script_len={(generatedScript ?? string.Empty).Length}");
-                WriteText(ctx.Response, generatedScript, "text/plain; charset=utf-8");
+                WriteText(ctx.Response, generatedScript ?? string.Empty, "text/plain; charset=utf-8");
             }
             catch (Exception ex)
             {
@@ -435,12 +399,11 @@ public sealed partial class HtmxBotWindow : IAppUi
         {
             var form = ReadForm(req);
             var script = GetValue(form, "script");
-            string? activeBotId;
-            lock (_lock) activeBotId = _snapshot.ActiveBotId;
-            if (!string.IsNullOrWhiteSpace(script) && !string.IsNullOrWhiteSpace(activeBotId))
+            var botId = GetValue(form, "bot_id");
+            if (!string.IsNullOrWhiteSpace(script) && !string.IsNullOrWhiteSpace(botId))
             {
                 _runtimeCommandWriter?.TryWrite(new RuntimeCommandRequest(
-                    activeBotId!,
+                    botId!,
                     RuntimeCommandNames.SetScript,
                     script));
             }
@@ -450,12 +413,12 @@ public sealed partial class HtmxBotWindow : IAppUi
 
         if (req.HttpMethod == "POST" && path == "/api/execute")
         {
-            string? activeBotId;
-            lock (_lock) activeBotId = _snapshot.ActiveBotId;
-            if (!string.IsNullOrWhiteSpace(activeBotId))
+            var form = ReadForm(req);
+            var botId = GetValue(form, "bot_id");
+            if (!string.IsNullOrWhiteSpace(botId))
             {
                 _runtimeCommandWriter?.TryWrite(new RuntimeCommandRequest(
-                    activeBotId!,
+                    botId!,
                     RuntimeCommandNames.ExecuteScript));
             }
             WriteNoContent(ctx.Response);
@@ -464,12 +427,12 @@ public sealed partial class HtmxBotWindow : IAppUi
 
         if (req.HttpMethod == "POST" && path == "/api/halt")
         {
-            string? targetBotId;
-            lock (_lock) targetBotId = _snapshot.ActiveBotId;
-            if (!string.IsNullOrWhiteSpace(targetBotId))
+            var form = ReadForm(req);
+            var botId = GetValue(form, "bot_id");
+            if (!string.IsNullOrWhiteSpace(botId))
             {
                 _runtimeCommandWriter?.TryWrite(new RuntimeCommandRequest(
-                    targetBotId!,
+                    botId!,
                     RuntimeCommandNames.Halt));
             }
             WriteNoContent(ctx.Response);
@@ -480,32 +443,21 @@ public sealed partial class HtmxBotWindow : IAppUi
         {
             var form = ReadForm(req);
             var script = GetValue(form, "script");
-            string? activeBotId;
-            lock (_lock) activeBotId = _snapshot.ActiveBotId;
-            if (!string.IsNullOrWhiteSpace(activeBotId))
+            var botId = GetValue(form, "bot_id");
+            if (!string.IsNullOrWhiteSpace(botId))
             {
                 if (!string.IsNullOrWhiteSpace(script))
                 {
                     _runtimeCommandWriter?.TryWrite(new RuntimeCommandRequest(
-                        activeBotId!,
+                        botId!,
                         RuntimeCommandNames.SetScript,
                         script));
                 }
 
                 _runtimeCommandWriter?.TryWrite(new RuntimeCommandRequest(
-                    activeBotId!,
+                    botId!,
                     RuntimeCommandNames.SaveExample));
             }
-            WriteNoContent(ctx.Response);
-            return;
-        }
-
-        if (req.HttpMethod == "POST" && path == "/api/switch-bot")
-        {
-            var form = ReadForm(req);
-            var botId = GetValue(form, "bot_id");
-            if (!string.IsNullOrWhiteSpace(botId))
-                _switchBotWriter?.TryWrite(botId);
             WriteNoContent(ctx.Response);
             return;
         }
@@ -564,7 +516,7 @@ public sealed partial class HtmxBotWindow : IAppUi
         WriteText(ctx.Response, "Not found", "text/plain", 404);
     }
 
-    private string BuildBotsHtml()
+    private string BuildBotsHtml(string? activeBotId)
     {
         UiSnapshot snapshot;
         lock (_lock) snapshot = _snapshot;
@@ -573,14 +525,14 @@ public sealed partial class HtmxBotWindow : IAppUi
         sb.AppendLine("<div class='list bot-list'>");
         foreach (var bot in snapshot.Bots)
         {
-            var activeClass = bot.Id == snapshot.ActiveBotId ? " active" : "";
-            sb.Append("<form hx-post='api/switch-bot' hx-swap='none'><input type='hidden' name='bot_id' value='")
-                .Append(E(bot.Id)).Append("'><button class='bot-btn").Append(activeClass).Append("' type='submit'>")
+            var activeClass = bot.Id == activeBotId ? " active" : "";
+            sb.Append("<button class='bot-btn").Append(activeClass).Append("' onclick='window.selectBot(\"")
+                .Append(E(bot.Id)).Append("\")'>")
                 .Append("<span class='bot-color-dot' style='background:")
                 .Append(E(bot.ColorHex))
                 .Append("'></span><span>")
                 .Append(E(bot.Label))
-                .AppendLine("</span></button></form>");
+                .AppendLine("</span></button>");
         }
         if (snapshot.Bots.Count == 0)
             sb.AppendLine("<div class='small'>(no bots loaded)</div>");
@@ -588,70 +540,90 @@ public sealed partial class HtmxBotWindow : IAppUi
         return sb.ToString();
     }
 
-    private string BuildStateHtml(string? tab)
+    private BotStateEntry? GetBotState(UiSnapshot snapshot, string? botId)
+    {
+        var id = botId ?? snapshot.DefaultBotId;
+        if (id == null) return null;
+        snapshot.BotStates.TryGetValue(id, out var state);
+        return state;
+    }
+
+    private string BuildStateHtml(string? tab, string? botId)
     {
         UiSnapshot snapshot;
         lock (_lock) snapshot = _snapshot;
+        var botState = GetBotState(snapshot, botId);
         var sb = new StringBuilder();
         var normalizedTab = (tab ?? "map").Trim().ToLowerInvariant();
         switch (normalizedTab)
         {
             case "trade":
-                sb.Append(TradeTabRenderer.Build(snapshot.TradeModel));
+                sb.Append(TradeTabRenderer.Build(botState?.TradeModel));
                 break;
             case "shipyard":
-                sb.Append(ShipyardTabRenderer.Build(snapshot.ShipyardModel));
+                sb.Append(ShipyardTabRenderer.Build(botState?.ShipyardModel));
                 break;
             case "crafting":
-                sb.Append(CraftingTabRenderer.Build(snapshot.CraftingModel));
+                sb.Append(CraftingTabRenderer.Build(botState?.CraftingModel));
                 break;
             case "missions":
-                sb.Append(MissionsTabRenderer.Build(snapshot.ActiveMissionPrompts, snapshot.AvailableMissionPrompts));
+                sb.Append(MissionsTabRenderer.Build(
+                    botState?.ActiveMissionPrompts ?? Array.Empty<MissionPromptOption>(),
+                    botState?.AvailableMissionPrompts ?? Array.Empty<MissionPromptOption>()));
                 break;
             case "map":
-                sb.Append(MapTabRenderer.Build(snapshot.SpaceModel, snapshot.BotMapMarkers));
-                break;
             case "space":
             default:
-                sb.Append(MapTabRenderer.Build(snapshot.SpaceModel, snapshot.BotMapMarkers));
+                // Collect known systems from all bots so routes for non-selected bots
+                // can still be resolved to screen coordinates on the galaxy map.
+                var allKnownSystems = snapshot.BotStates.Values
+                    .Where(s => s.SpaceModel?.LocalSystems != null)
+                    .SelectMany(s => s.SpaceModel!.LocalSystems)
+                    .Where(s => !string.IsNullOrWhiteSpace(s.Id))
+                    .GroupBy(s => s.Id, StringComparer.OrdinalIgnoreCase)
+                    .Select(g => g.First())
+                    .ToList();
+                sb.Append(MapTabRenderer.Build(botState?.SpaceModel, snapshot.BotMapMarkers, snapshot.BotRoutes, botId, allKnownSystems));
                 break;
         }
         return sb.ToString();
     }
 
-    private string BuildStateStripHtml()
+    private string BuildStateStripHtml(string? botId)
     {
         UiSnapshot snapshot;
         lock (_lock) snapshot = _snapshot;
-        return SpaceTabRenderer.BuildStateStrip(snapshot.SpaceModel);
+        return SpaceTabRenderer.BuildStateStrip(GetBotState(snapshot, botId)?.SpaceModel);
     }
 
-    private string BuildRightPanelHtml()
+    private string BuildRightPanelHtml(string? botId)
     {
         UiSnapshot snapshot;
         lock (_lock) snapshot = _snapshot;
+        var botState = GetBotState(snapshot, botId);
         var sb = new StringBuilder();
         sb.AppendLine("<section class='space-panel script-block'><div class='space-panel-title'>Execution</div><pre class='log-pre'>");
-        foreach (var line in snapshot.ExecutionStatusLines)
+        foreach (var line in botState?.ExecutionStatusLines ?? Array.Empty<string>())
             sb.Append(E(line)).AppendLine();
         sb.AppendLine("</pre></section>");
         return sb.ToString();
     }
 
-    private string BuildTickStatusHtml()
+    private string BuildTickStatusHtml(string? botId)
     {
         UiSnapshot snapshot;
         lock (_lock) snapshot = _snapshot;
+        var botState = GetBotState(snapshot, botId);
 
         var sb = new StringBuilder();
-        var tickText = snapshot.CurrentTick.HasValue
-            ? snapshot.CurrentTick.Value.ToString()
+        var tickText = botState?.CurrentTick.HasValue == true
+            ? botState.CurrentTick!.Value.ToString()
             : "N/A";
-        var lastPostIso = snapshot.LastSpaceMoltPostUtc.HasValue
-            ? snapshot.LastSpaceMoltPostUtc.Value.ToUniversalTime().ToString("O")
+        var lastPostIso = botState?.LastSpaceMoltPostUtc.HasValue == true
+            ? botState.LastSpaceMoltPostUtc!.Value.ToUniversalTime().ToString("O")
             : string.Empty;
-        var lastPostText = snapshot.LastSpaceMoltPostUtc.HasValue
-            ? $"{Math.Max(0, (int)(DateTime.UtcNow - snapshot.LastSpaceMoltPostUtc.Value).TotalSeconds)}s ago"
+        var lastPostText = botState?.LastSpaceMoltPostUtc.HasValue == true
+            ? $"{Math.Max(0, (int)(DateTime.UtcNow - botState.LastSpaceMoltPostUtc!.Value).TotalSeconds)}s ago"
             : "n/a";
 
         sb.Append("<div class='tick-status-shell' data-current-tick='")
@@ -944,15 +916,13 @@ public sealed partial class HtmxBotWindow : IAppUi
         return false;
     }
 
-    private string BuildCurrentScriptStateJson()
+    private string BuildCurrentScriptStateJson(string? botId)
     {
-        string script;
-        int? currentScriptLine;
-        lock (_lock)
-        {
-            script = _snapshot.ControlInput ?? string.Empty;
-            currentScriptLine = _snapshot.CurrentScriptLine;
-        }
+        UiSnapshot snapshot;
+        lock (_lock) snapshot = _snapshot;
+        var botState = GetBotState(snapshot, botId);
+        var script = botState?.ControlInput ?? string.Empty;
+        var currentScriptLine = botState?.CurrentScriptLine;
 
         return JsonSerializer.Serialize(new
         {

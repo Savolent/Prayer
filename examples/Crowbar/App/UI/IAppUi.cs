@@ -4,7 +4,6 @@ using System.Threading.Channels;
 public interface IAppUi
 {
     void SetRuntimeCommandWriter(ChannelWriter<RuntimeCommandRequest> writer);
-    void SetSwitchBotWriter(ChannelWriter<string> writer);
     void SetAddBotWriter(ChannelWriter<AddBotRequest> writer);
     void SetLlmSelectionWriter(ChannelWriter<LlmProviderSelection> writer);
 
@@ -13,24 +12,11 @@ public interface IAppUi
     void SetProviderModels(string provider, IReadOnlyList<string> models);
 
     void Render(
-        SpaceUiModel? spaceModel,
-        IReadOnlyList<string> spaceConnectedSystems,
-        TradeUiModel? tradeModel,
-        ShipyardUiModel? shipyardModel,
-        CatalogUiModel? catalogModel,
-        IReadOnlyList<MissionPromptOption> activeMissionPrompts,
-        IReadOnlyList<MissionPromptOption> availableMissionPrompts,
-        IReadOnlyList<string> memory,
-        IReadOnlyList<string> executionStatusLines,
-        string? controlInput,
-        int? currentScriptLine,
-        string? lastGenerationPrompt,
-        int? currentTick,
-        System.DateTime? lastSpaceMoltPostUtc,
+        IReadOnlyDictionary<string, BotStateEntry> botStates,
+        IReadOnlyList<BotRouteOverlay> botRoutes,
         IReadOnlyList<BotTab> bots,
         IReadOnlyList<BotMapMarker> botMapMarkers,
-        string? activeBotId,
-        CraftingUiModel? craftingModel = null);
+        string? defaultBotId);
 
     void Run();
 }

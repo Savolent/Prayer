@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -79,7 +79,7 @@ class Program
         var cts = new CancellationTokenSource();
 
         var botSessions = new Dictionary<string, BotSession>(StringComparer.Ordinal);
-        string? activeBotId = null;
+        string? defaultBotId = null;
         object botLock = new();
         var savedBots = (await prayerApi.GetSavedBotsAsync()).ToList();
 
@@ -93,26 +93,19 @@ class Program
             LogSink.Instance.Enqueue(new LogEvent(DateTime.UtcNow, LogKind.AuthFlow, line, AppPaths.AuthFlowLogFile));
         }
 
-        BotSession? GetActiveBot()
+        IReadOnlyList<BotSession> GetAllBots()
         {
             lock (botLock)
             {
-                if (activeBotId == null)
-                    return null;
-
-                return botSessions.TryGetValue(activeBotId, out var session)
-                    ? session
-                    : null;
+                return botSessions.Values.ToList();
             }
         }
 
-        IReadOnlyList<BotTab> GetBotTabs()
+        string? GetDefaultBotId()
         {
             lock (botLock)
             {
-                return botSessions.Values
-                    .Select(b => new BotTab(b.Id, b.Label, b.ColorHex))
-                    .ToList();
+                return defaultBotId;
             }
         }
 
@@ -131,8 +124,7 @@ class Program
                             session.Id,
                             session.Label,
                             systemId,
-                            session.ColorHex,
-                            string.Equals(activeBotId, session.Id, StringComparison.Ordinal));
+                            session.ColorHex);
                     })
                     .Where(marker => marker != null)
                     .Cast<BotMapMarker>()
@@ -140,22 +132,40 @@ class Program
             }
         }
 
-        IReadOnlyList<string> GetExecutionStatusLinesForBot(string? botId)
+        IReadOnlyList<BotRouteOverlay> GetBotRoutes()
         {
             lock (botLock)
             {
-                if (botId == null || !botSessions.TryGetValue(botId, out var session))
-                    return Array.Empty<string>();
+                return botSessions.Values
+                    .Select(session =>
+                    {
+                        var runtimeState = session.LastPrayerState;
+                        var activeRoute = runtimeState?.ActiveRoute;
+                        var currentSystem = (runtimeState?.State?.System ?? string.Empty).Trim();
+                        if (activeRoute == null || string.IsNullOrWhiteSpace(currentSystem))
+                            return null;
 
-                return session.ExecutionStatusLines.ToList();
-            }
-        }
+                        var hops = (activeRoute.Hops ?? Array.Empty<string>())
+                            .Where(h => !string.IsNullOrWhiteSpace(h))
+                            .Select(h => h.Trim())
+                            .ToList();
+                        if (hops.Count == 0)
+                            return null;
 
-        string? GetActiveBotId()
-        {
-            lock (botLock)
-            {
-                return activeBotId;
+                        return new BotRouteOverlay(
+                            session.Id,
+                            session.Label,
+                            session.ColorHex,
+                            currentSystem,
+                            string.IsNullOrWhiteSpace(activeRoute.Target) ? null : activeRoute.Target.Trim(),
+                            hops,
+                            activeRoute.TotalJumps,
+                            activeRoute.EstimatedFuel,
+                            activeRoute.FuelAvailable);
+                    })
+                    .Where(route => route != null)
+                    .Cast<BotRouteOverlay>()
+                    .ToList();
             }
         }
 
@@ -189,22 +199,28 @@ class Program
 
         var snapshotPublisher = new UiSnapshotPublisher(
             channels.UiSnapshots.Writer,
-            GetBotTabs,
-            GetActiveBotId,
-            GetActiveBot,
-            GetExecutionStatusLinesForBot,
+            GetAllBots,
+            GetDefaultBotId,
             GetBotMapMarkers,
+            GetBotRoutes,
             LogAuth);
         var sessionPollers = new Dictionary<string, (CancellationTokenSource Cts, Task Task)>(StringComparer.Ordinal);
 
         void StartSessionPoller(BotSession session)
         {
             if (string.IsNullOrWhiteSpace(session.PrayerSessionId))
+            {
+                LogAuth($"session_poller_skipped | {session.Label} | reason=no_prayer_session_id");
                 return;
+            }
 
             if (sessionPollers.ContainsKey(session.Id))
+            {
+                LogAuth($"session_poller_skipped | {session.Label} | reason=already_registered");
                 return;
+            }
 
+            LogAuth($"session_poller_starting | {session.Label} | session={session.PrayerSessionId}");
             var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cts.Token);
             var pollTask = Task.Run(async () =>
             {
@@ -216,12 +232,17 @@ class Program
                     prayerSessionId = session.PrayerSessionId ?? "";
                 }
 
+                LogAuth($"session_poller_started | {session.Label} | session={prayerSessionId} | since_version={sinceVersion}");
+
                 while (!linkedCts.Token.IsCancellationRequested)
                 {
                     try
                     {
                         if (string.IsNullOrWhiteSpace(prayerSessionId))
+                        {
+                            LogAuth($"session_poller_exit | {session.Label} | reason=empty_session_id");
                             break;
+                        }
 
                         var pollResult = await prayerApi.GetRuntimeStateLongPollAsync(
                             prayerSessionId,
@@ -232,9 +253,9 @@ class Program
                         if (!pollResult.Changed || pollResult.State == null)
                             continue;
 
+                        LogAuth($"session_poller_state_changed | {session.Label} | version={pollResult.StateVersion}");
                         sinceVersion = pollResult.StateVersion;
 
-                        bool isActive;
                         lock (botLock)
                         {
                             if (botSessions.TryGetValue(session.Id, out var current))
@@ -242,11 +263,9 @@ class Program
                                 current.PrayerStateVersion = pollResult.StateVersion;
                                 current.LastPrayerState = pollResult.State;
                             }
-                            isActive = string.Equals(activeBotId, session.Id, StringComparison.Ordinal);
                         }
 
-                        if (isActive)
-                            snapshotPublisher.PublishPrayerSnapshot(session, pollResult.State);
+                        snapshotPublisher.PublishSnapshot();
                     }
                     catch (OperationCanceledException) when (linkedCts.Token.IsCancellationRequested)
                     {
@@ -254,7 +273,7 @@ class Program
                     }
                     catch (Exception ex)
                     {
-                        LogAuth($"prayer_session_poll_failed | {session.Label} | {ex.GetType().Name}: {ex.Message}");
+                        LogAuth($"session_poller_poll_failed | {session.Label} | {ex.GetType().Name}: {ex.Message}");
                         try
                         {
                             await Task.Delay(500, linkedCts.Token);
@@ -294,11 +313,13 @@ class Program
                     if (string.IsNullOrWhiteSpace(registrationCode) || string.IsNullOrWhiteSpace(empire))
                         throw new ArgumentException("Registration code and empire are required for register mode.");
 
+                    LogAuth($"{flowLabel} | {label} | http_register_session | begin");
                     var registerResult = await prayerApi.RegisterSessionAsync(
                         normalizedUsername,
                         empire.Trim().ToLowerInvariant(),
                         registrationCode.Trim(),
                         label);
+                    LogAuth($"{flowLabel} | {label} | http_register_session | ok | {authTimer.ElapsedMilliseconds}ms");
 
                     prayerSessionId = registerResult.SessionId;
                     passwordToSave = registerResult.Password;
@@ -308,14 +329,14 @@ class Program
                     if (string.IsNullOrWhiteSpace(password))
                         throw new ArgumentException("Password is required for login mode.");
 
+                    LogAuth($"{flowLabel} | {label} | http_create_session | begin");
                     prayerSessionId = await prayerApi.CreateSessionAsync(
                         normalizedUsername,
                         password,
                         label);
+                    LogAuth($"{flowLabel} | {label} | http_create_session | ok | {authTimer.ElapsedMilliseconds}ms | session={prayerSessionId}");
                     passwordToSave = password;
                 }
-
-                LogAuth($"{flowLabel} | {label} | authenticated_and_session_ready | {authTimer.ElapsedMilliseconds}ms");
 
                 LogAuth($"{flowLabel} | {label} | session_ready | {totalTimer.ElapsedMilliseconds}ms");
 
@@ -325,22 +346,23 @@ class Program
                     DeriveBotColorHex(normalizedUsername));
 
                 session.PrayerSessionId = prayerSessionId;
-                LogAuth($"{flowLabel} | {label} | prayer_session_created | id={session.PrayerSessionId}");
+                LogAuth($"{flowLabel} | {label} | prayer_session_created | bot_id={session.Id} | prayer_session={session.PrayerSessionId}");
+                LogAuth($"{flowLabel} | {label} | http_set_llm | begin | provider={currentPlannerProvider} | model={currentPlannerModel}");
                 try
                 {
                     await prayerApi.SetSessionLlmAsync(
                         prayerSessionId,
                         currentPlannerProvider,
                         currentPlannerModel);
+                    LogAuth($"{flowLabel} | {label} | http_set_llm | ok");
                 }
                 catch (Exception ex)
                 {
                     channels.Status.Writer.TryWrite(
                         $"[{label}] Session created but LLM apply failed: {ex.Message}");
                     LogAuth(
-                        $"{flowLabel} | {label} | llm_apply_failed | provider={currentPlannerProvider} | model={currentPlannerModel} | {ex.GetType().Name}: {ex.Message}");
+                        $"{flowLabel} | {label} | http_set_llm | failed | provider={currentPlannerProvider} | model={currentPlannerModel} | {ex.GetType().Name}: {ex.Message}");
                 }
-
 
                 return (session, passwordToSave);
             }
@@ -351,7 +373,7 @@ class Program
             }
         }
 
-        snapshotPublisher.PublishNoBotSnapshot();
+        snapshotPublisher.PublishSnapshot();
 
         if (savedBots.Count > 0)
         {
@@ -372,8 +394,8 @@ class Program
                     lock (botLock)
                     {
                         botSessions[session.Id] = session;
-                        if (activeBotId == null)
-                            activeBotId = session.Id;
+                        if (defaultBotId == null)
+                            defaultBotId = session.Id;
                     }
                     StartSessionPoller(session);
                     snapshotPublisher.LogBotTabsIfChanged("startup_autologin_added");
@@ -388,7 +410,7 @@ class Program
             LogAuth("startup | end_autoload");
         }
 
-        snapshotPublisher.PublishActiveSnapshot();
+        snapshotPublisher.PublishSnapshot();
 
         var botTask = Task.Run(async () =>
         {
@@ -458,8 +480,8 @@ class Program
                             lock (botLock)
                             {
                                 botSessions[session.Id] = session;
-                                if (activeBotId == null)
-                                    activeBotId = session.Id;
+                                if (defaultBotId == null)
+                                    defaultBotId = session.Id;
                             }
                             StartSessionPoller(session);
                             snapshotPublisher.LogBotTabsIfChanged("manual_add_added");
@@ -473,7 +495,7 @@ class Program
                             }
 
                             channels.Status.Writer.TryWrite($"Bot loaded: {session.Label}");
-                            snapshotPublisher.PublishActiveSnapshot();
+                            snapshotPublisher.PublishSnapshot();
                         }
                         catch (Exception ex)
                         {
@@ -511,14 +533,31 @@ class Program
 
                         try
                         {
-                            var active = GetActiveBot();
-                            if (active?.PrayerSessionId != null)
+                            // Apply new LLM to all active sessions.
+                            List<BotSession> allSessions;
+                            lock (botLock)
                             {
-                                await prayerApi.SetSessionLlmAsync(
-                                    active.PrayerSessionId,
-                                    selectedProvider,
-                                    selectedModel);
+                                allSessions = botSessions.Values
+                                    .Where(s => !string.IsNullOrWhiteSpace(s.PrayerSessionId))
+                                    .ToList();
                             }
+
+                            foreach (var session in allSessions)
+                            {
+                                try
+                                {
+                                    await prayerApi.SetSessionLlmAsync(
+                                        session.PrayerSessionId!,
+                                        selectedProvider,
+                                        selectedModel);
+                                }
+                                catch (Exception ex)
+                                {
+                                    channels.Status.Writer.TryWrite(
+                                        $"[{session.Label}] LLM apply failed: {ex.Message}");
+                                }
+                            }
+
                             currentPlannerProvider = selectedProvider;
                             currentPlannerModel = selectedModel;
                             await prayerApi.SetDefaultLlmPreferenceAsync(
@@ -538,33 +577,11 @@ class Program
                         }
                     }
 
-                    while (channels.SwitchBot.Reader.TryRead(out var botId))
-                    {
-                        BotSession? switched = null;
-                        lock (botLock)
-                        {
-                            if (botSessions.TryGetValue(botId, out var existing))
-                            {
-                                activeBotId = botId;
-                                switched = existing;
-                            }
-                        }
-
-                        if (switched == null)
-                        {
-                            channels.Status.Writer.TryWrite("Selected bot no longer exists.");
-                            continue;
-                        }
-
-                        channels.Status.Writer.TryWrite($"Switched to {switched.Label}");
-                        if (switched.LastPrayerState != null)
-                            snapshotPublisher.PublishPrayerSnapshot(switched, switched.LastPrayerState);
-                        else
-                            snapshotPublisher.PublishActiveSnapshot();
-                    }
-
                     while (channels.RuntimeCommands.Reader.TryRead(out var request))
                     {
+                        var argSuffix = string.IsNullOrWhiteSpace(request.Argument) ? "" : $" | arg={request.Argument}";
+                        LogAuth($"runtime_command_received | bot_id={request.BotId} | command={request.Command}{argSuffix}");
+
                         BotSession? target;
                         string? prayerSessionId = null;
                         lock (botLock)
@@ -580,12 +597,14 @@ class Program
                         if (target == null)
                         {
                             channels.Status.Writer.TryWrite("Selected bot no longer exists.");
+                            LogAuth($"runtime_command_drop | bot_id={request.BotId} | command={request.Command} | reason=bot_not_found");
                             continue;
                         }
 
                         if (string.IsNullOrWhiteSpace(prayerSessionId))
                         {
                             channels.Status.Writer.TryWrite($"[{target.Label}] Prayer session is not available.");
+                            LogAuth($"runtime_command_drop | bot={target.Label} | command={request.Command} | reason=no_prayer_session");
                             continue;
                         }
 
@@ -596,13 +615,14 @@ class Program
                                 request.Command,
                                 request.Argument);
 
+                            LogAuth($"runtime_command_sent | bot={target.Label} | command={request.Command} | session={prayerSessionId}{argSuffix}");
                             if (string.Equals(request.Command, RuntimeCommandNames.ExecuteScript, StringComparison.Ordinal))
                                 channels.Status.Writer.TryWrite($"Restarting script for {target.Label}");
                         }
                         catch (Exception ex)
                         {
                             channels.Status.Writer.TryWrite($"[{target.Label}] Runtime command failed: {ex.Message}");
-                            LogAuth($"runtime_command_failed | {target.Label} | {request.Command} | {ex.GetType().Name}: {ex.Message}");
+                            LogAuth($"runtime_command_failed | bot={target.Label} | command={request.Command} | session={prayerSessionId} | {ex.GetType().Name}: {ex.Message}");
                         }
                     }
 
@@ -631,34 +651,20 @@ class Program
                         snapshot = newer;
 
                     var renderedLabels = string.Join(",", snapshot.Bots.Select(b => b.Label));
-                    var renderedSignature = $"{snapshot.Bots.Count}|{snapshot.ActiveBotId}|{renderedLabels}";
+                    var renderedSignature = $"{snapshot.Bots.Count}|{snapshot.DefaultBotId}|{renderedLabels}";
                     if (renderedSignature != lastRenderedTabSignature)
                     {
                         lastRenderedTabSignature = renderedSignature;
                         LogAuth(
-                            $"ui_render_dispatch | tabs_changed | count={snapshot.Bots.Count} | active={snapshot.ActiveBotId ?? "(null)"} | labels=[{renderedLabels}]");
+                            $"ui_render_dispatch | tabs_changed | count={snapshot.Bots.Count} | default={snapshot.DefaultBotId ?? "(null)"} | labels=[{renderedLabels}]");
                     }
 
                     ui.Render(
-                        snapshot.SpaceModel,
-                        snapshot.SpaceConnectedSystems,
-                        snapshot.TradeModel,
-                        snapshot.ShipyardModel,
-                        snapshot.CatalogModel,
-                        snapshot.ActiveMissionPrompts,
-                        snapshot.AvailableMissionPrompts,
-                        snapshot.Memory,
-                        snapshot.ExecutionStatusLines,
-                        snapshot.ControlInput,
-                        snapshot.CurrentScriptLine,
-                        snapshot.LastGenerationPrompt,
-                        snapshot.CurrentTick,
-                        snapshot.LastSpaceMoltPostUtc,
+                        snapshot.BotStates,
+                        snapshot.BotRoutes,
                         snapshot.Bots,
                         snapshot.BotMapMarkers,
-                        snapshot.ActiveBotId,
-                        snapshot.CraftingModel
-                    );
+                        snapshot.DefaultBotId);
                 }
             }
             catch (OperationCanceledException)
