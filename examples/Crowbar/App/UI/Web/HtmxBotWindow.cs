@@ -11,7 +11,16 @@ using System.Threading.Channels;
 public sealed partial class HtmxBotWindow : IAppUi
 {
     private static readonly Lazy<string> UiCssAsset = new(() => ReadUiAsset("ui.css"));
-    private static readonly Lazy<string> UiJsAsset = new(() => ReadUiAsset("ui.js"));
+    private static readonly Lazy<string> UiJsAsset = new(() => string.Concat(
+        ReadUiAsset("ui-core.js"),
+        ReadUiAsset("ui-tick-bar.js"),
+        ReadUiAsset("ui-script-editor.js"),
+        ReadUiAsset("ui-execution.js"),
+        ReadUiAsset("ui-nav.js"),
+        ReadUiAsset("ui-catalogs.js"),
+        ReadUiAsset("ui-galaxy-map.js"),
+        ReadUiAsset("ui-state.js"),
+        ReadUiAsset("ui-init.js")));
 
     private readonly object _lock = new();
     private readonly string _prefix;
