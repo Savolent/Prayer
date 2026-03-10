@@ -44,7 +44,7 @@ public class SpaceMoltAgent
             AgentPrompt.BaseSystemPrompt,
             SetStatus);
         _execution = new CommandExecutionEngine(
-            CommandCatalog.All,
+            CommandCatalog.CreateAll(),
             SetStatus,
             logger,
             ControlModeName,

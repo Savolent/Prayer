@@ -3,7 +3,10 @@ using System.Collections.Generic;
 
 public static class CommandCatalog
 {
-    public static IReadOnlyList<ICommand> All { get; } = new List<ICommand>
+    // Used for DSL parsing/metadata only — do not use for command execution.
+    public static IReadOnlyList<ICommand> All { get; } = CreateAll();
+
+    public static IReadOnlyList<ICommand> CreateAll() => new List<ICommand>
     {
         new MineCommand(),
         new SurveyCommand(),

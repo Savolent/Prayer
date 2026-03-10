@@ -265,7 +265,7 @@
     window._haltHighlightPendingUntil = 0;
     window.setExecuteButtonRunning(true);
     window.setLiveScriptRunLine(1);
-    htmx.ajax('POST', apiUrl('api/execute'), { swap: 'none' });
+    htmx.ajax('POST', apiUrl('api/execute'), { swap: 'none', values: { bot_id: window._activeBotId || '' } });
     // Force a quick refresh in addition to the 1s poll loop.
     setTimeout(window.syncCurrentScript, 120);
     setTimeout(window.syncCurrentScript, 450);
@@ -303,6 +303,7 @@
 
     var body = new URLSearchParams();
     body.set('script', script);
+    if (window._activeBotId) body.set('bot_id', window._activeBotId);
 
     fetch(apiUrl('api/control-input'), {
       method: 'POST',
@@ -324,7 +325,7 @@
         window._haltHighlightPendingUntil = 0;
         window.setExecuteButtonRunning(true);
         window.setLiveScriptRunLine(1);
-        htmx.ajax('POST', apiUrl('api/execute'), { swap: 'none' });
+        htmx.ajax('POST', apiUrl('api/execute'), { swap: 'none', values: { bot_id: window._activeBotId || '' } });
         setTimeout(window.syncCurrentScript, 120);
         setTimeout(window.syncCurrentScript, 450);
       })
@@ -332,7 +333,9 @@
   };
 
   window.syncCurrentScript = function () {
-    fetch(apiUrl('partial/current-script'), { cache: 'no-store' })
+    var botId = window._activeBotId;
+    var url = apiUrl('partial/current-script') + (botId ? '?bot_id=' + encodeURIComponent(botId) : '');
+    fetch(url, { cache: 'no-store' })
       .then(function (res) { return res.ok ? res.json() : null; })
       .then(function (state) {
         if (!state || !window._liveScriptEditor) return;
@@ -767,6 +770,46 @@ function zy(y) { return cy - ((y - cy) * zoom); }
         });
       }
 
+      var botRoutes = state.layout.botRoutes || [];
+      if (Array.isArray(botRoutes) && botRoutes.length > 0) {
+        botRoutes.forEach(function (route) {
+          if (!route || !Array.isArray(route.segments) || route.segments.length === 0) return;
+          var lineColor = route.color || '#7ee69e';
+          ctx.save();
+          ctx.strokeStyle = lineColor;
+          ctx.globalAlpha = route.isActive ? 0.9 : 0.62;
+          ctx.lineWidth = Math.max(1.3, (route.isActive ? 2.5 : 1.8) * Math.max(0.7, Math.min(1.4, zoom)));
+          route.segments.forEach(function (segment) {
+            var ax = zx(segment.a.x) + panX;
+            var ay = zy(segment.a.y) + panY;
+            var bx = zx(segment.b.x) + panX;
+            var by = zy(segment.b.y) + panY;
+            ctx.beginPath();
+            ctx.moveTo(ax, ay);
+            ctx.lineTo(bx, by);
+            ctx.stroke();
+          });
+
+          if (Array.isArray(route.markers)) {
+            route.markers.forEach(function (marker) {
+              var px = zx(marker.point.x) + panX;
+              var py = zy(marker.point.y) + panY;
+              var radius = marker.isEnd ? 5.6 : 4.3;
+              ctx.fillStyle = lineColor;
+              ctx.beginPath();
+              ctx.arc(px, py, radius, 0, Math.PI * 2);
+              ctx.fill();
+              if (marker.isEnd && route.label) {
+                ctx.fillStyle = 'rgba(235, 245, 255, 0.95)';
+                ctx.font = '10px ui-monospace, SFMono-Regular, Menlo, monospace';
+                ctx.fillText(route.label, px + 6, py - 6);
+              }
+            });
+          }
+          ctx.restore();
+        });
+      }
+
       var gx = typeof state.mouseX === 'number' ? state.mouseX : null;
       var gy = typeof state.mouseY === 'number' ? state.mouseY : null;
       var hoverSystem = null;
@@ -854,6 +897,31 @@ function zy(y) { return cy - ((y - cy) * zoom); }
       ctx.stroke();
 
       drawMapHud(state.currentId || 'Unknown', 'GALAXY MAP');
+
+      if (Array.isArray(botRoutes) && botRoutes.length > 0) {
+        var routeTitle = 'Bot Routes: ' + botRoutes.length;
+        var activeCount = botRoutes.filter(function (r) { return !!(r && r.isActive); }).length;
+        var routeMeta = activeCount > 0 ? ('active=' + activeCount) : 'active=0';
+        var rx = 12;
+        var ry = cssHeight - 42;
+        var rpad = 8;
+        ctx.save();
+        ctx.font = '700 11px ui-monospace, SFMono-Regular, Menlo, monospace';
+        var rw = Math.max(ctx.measureText(routeTitle).width, ctx.measureText(routeMeta).width) + (rpad * 2);
+        ctx.fillStyle = 'rgba(8, 17, 24, 0.78)';
+        ctx.strokeStyle = 'rgba(122, 190, 241, 0.55)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.roundRect(rx, ry, rw, 30, 6);
+        ctx.fill();
+        ctx.stroke();
+        ctx.fillStyle = '#d8ffef';
+        ctx.fillText(routeTitle, rx + rpad, ry + 12);
+        ctx.fillStyle = 'rgba(174, 255, 220, 0.92)';
+        ctx.font = '10px ui-monospace, SFMono-Regular, Menlo, monospace';
+        ctx.fillText(routeMeta, rx + rpad, ry + 24);
+        ctx.restore();
+      }
       return;
     }
 
@@ -1047,6 +1115,12 @@ function zy(y) { return cy - ((y - cy) * zoom); }
         var systemId = ((m.SystemId || m.systemId) || '').toString().trim();
         return systemId.length > 0;
       });
+      var botRoutes = ((map && (map.BotRoutes || map.botRoutes)) || []).filter(function (r) {
+        if (!r) return false;
+        var currentSystemId = ((r.CurrentSystemId || r.currentSystemId) || '').toString().trim();
+        var hops = r.Hops || r.hops || [];
+        return currentSystemId.length > 0 && Array.isArray(hops) && hops.length > 0;
+      });
 
       var ctx = canvas.getContext('2d');
       if (!ctx) return;
@@ -1093,9 +1167,15 @@ function zy(y) { return cy - ((y - cy) * zoom); }
 
       if (mode === 'galaxy') {
         var galaxySystems = systems;
-        if (galaxySystems.length === 0) return;
+        // allSystemsExtra contains every bot's known systems for route coordinate resolution.
+        var allSystemsExtra = ((map && (map.AllSystems || map.allSystems)) || []);
 
-        var coords = galaxySystems
+        // If the selected bot has no local systems, fall back to allSystems for scale computation
+        // so that routes from other bots can still be drawn.
+        var coordsSource = galaxySystems.length > 0 ? galaxySystems : allSystemsExtra;
+        if (coordsSource.length === 0) return;
+
+        var coords = coordsSource
           .map(function (s) {
             var x = getX(s);
             var y = getY(s);
@@ -1153,6 +1233,74 @@ function zy(y) { return cy - ((y - cy) * zoom); }
           return entry;
         });
 
+        // Extend byIdLower with systems from all bots so routes for non-selected bots
+        // can be resolved even when they travel through systems the selected bot hasn't visited.
+        allSystemsExtra.forEach(function (s) {
+          var eid = getSystemId(s);
+          if (!eid || byIdLower[eid.toLowerCase()]) return;
+          var ex = getX(s), ey = getY(s);
+          if (typeof ex !== 'number' || typeof ey !== 'number') return;
+          var epx = centerX + ex * galaxyScale;
+          var epy = centerY - ey * galaxyScale;
+          byIdLower[eid.toLowerCase()] = { id: eid, point: { x: epx, y: epy }, connections: [] };
+        });
+
+        var routeOverlays = [];
+        botRoutes.forEach(function (route) {
+          var routeBotId = ((route.BotId || route.botId) || '').toString().trim();
+          var routeLabel = ((route.Label || route.label) || routeBotId || 'bot').toString().trim();
+          var routeColor = ((route.Color || route.color) || '#7ee69e').toString().trim();
+          var routeCurrentSystem = ((route.CurrentSystemId || route.currentSystemId) || '').toString().trim();
+          var routeTarget = ((route.TargetSystemId || route.targetSystemId) || '').toString().trim();
+          var routeHopsRaw = route.Hops || route.hops || [];
+          var routeHops = Array.isArray(routeHopsRaw)
+            ? routeHopsRaw
+              .map(function (h) { return (h || '').toString().trim(); })
+              .filter(function (h) { return h.length > 0; })
+            : [];
+          if (!routeCurrentSystem || routeHops.length === 0) return;
+
+          var routeSystems = [routeCurrentSystem];
+          routeHops.forEach(function (h) { routeSystems.push(h); });
+
+          var compactRoute = [];
+          routeSystems.forEach(function (sid) {
+            if (compactRoute.length === 0 || compactRoute[compactRoute.length - 1] !== sid) {
+              compactRoute.push(sid);
+            }
+          });
+
+          var routeSegments = [];
+          var routeMarkers = [];
+          compactRoute.forEach(function (sid, idx) {
+            var node = byIdLower[sid.toLowerCase()];
+            if (!node) return;
+            routeMarkers.push({
+              id: sid,
+              point: node.point,
+              isStart: idx === 0,
+              isEnd: idx === compactRoute.length - 1
+            });
+          });
+          for (var ridx = 0; ridx + 1 < compactRoute.length; ridx++) {
+            var from = byIdLower[compactRoute[ridx].toLowerCase()];
+            var to = byIdLower[compactRoute[ridx + 1].toLowerCase()];
+            if (!from || !to) continue;
+            routeSegments.push({ a: from.point, b: to.point });
+          }
+          if (routeSegments.length === 0) return;
+
+          routeOverlays.push({
+            botId: routeBotId,
+            label: routeLabel,
+            color: routeColor,
+            isActive: !!(route.IsActive || route.isActive),
+            targetId: routeTarget,
+            segments: routeSegments,
+            markers: routeMarkers
+          });
+        });
+
         botMarkers.forEach(function (m) {
           var markerSystemId = ((m.SystemId || m.systemId) || '').toString().trim();
           if (!markerSystemId) return;
@@ -1201,7 +1349,8 @@ function zy(y) { return cy - ((y - cy) * zoom); }
             stars: stars,
             systems: layoutSystems,
             lines: lines,
-            originPoint: { x: centerX, y: centerY }
+            originPoint: { x: centerX, y: centerY },
+            botRoutes: routeOverlays
           },
           mouseX: existing ? existing.mouseX : null,
           mouseY: existing ? existing.mouseY : null,
@@ -1799,4 +1948,27 @@ function zy(y) { return cy - ((y - cy) * zoom); }
   window.refreshTickStatusBar();
   startTickBarAnimationLoop();
   window.ensureScriptEditor();
+
+  // Client-side bot selection. window._activeBotId is seeded from the server on initial load.
+  window.selectBot = function (botId) {
+    window._activeBotId = botId || null;
+    // Re-poll all bot-scoped partials immediately; the server renders active state via bot_id query param.
+    document.querySelectorAll('.tab-pane.active[hx-get]').forEach(function (pane) {
+      htmx.trigger(pane, 'load');
+    });
+    ['bots-panel', 'state-tabs', 'state-strip-inline', 'right-panel', 'tick-status'].forEach(function (id) {
+      var el = document.getElementById(id);
+      if (el) htmx.trigger(el, 'load');
+    });
+  };
+
+  // Inject bot_id into every HTMX request so the server always knows which bot to target.
+  document.body.addEventListener('htmx:configRequest', function (e) {
+    var botId = window._activeBotId;
+    if (!botId) return;
+    var params = ((e || {}).detail || {}).parameters;
+    if (params && typeof params === 'object') {
+      params['bot_id'] = botId;
+    }
+  });
 }());

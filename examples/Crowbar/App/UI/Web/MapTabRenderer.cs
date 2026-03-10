@@ -7,7 +7,12 @@ using System.Text.Json;
 
 internal static class MapTabRenderer
 {
-    public static string Build(SpaceUiModel? model, IReadOnlyList<BotMapMarker>? botMapMarkers = null)
+    public static string Build(
+        SpaceUiModel? model,
+        IReadOnlyList<BotMapMarker>? botMapMarkers = null,
+        IReadOnlyList<BotRouteOverlay>? botRoutes = null,
+        string? activeBotId = null,
+        IReadOnlyList<SpaceUiSystemNode>? allKnownSystems = null)
     {
         var vm = model ?? new SpaceUiModel(
             System: string.Empty,
@@ -58,6 +63,13 @@ internal static class MapTabRenderer
                     y = p.Y,
                     isCurrent = string.Equals(p.Target, vm.Poi, StringComparison.OrdinalIgnoreCase)
                 }),
+            // allSystems contains every bot's known systems for route coordinate resolution.
+            // Not rendered as visible map nodes — only used to look up positions for route hops
+            // that pass through systems the selected bot hasn't visited yet.
+            allSystems = (allKnownSystems ?? Array.Empty<SpaceUiSystemNode>())
+                .Where(s => !string.IsNullOrWhiteSpace(s.Id) &&
+                            s.X.HasValue && s.Y.HasValue)
+                .Select(s => new { id = s.Id, x = s.X!.Value, y = s.Y!.Value }),
             botMarkers = (botMapMarkers ?? Array.Empty<BotMapMarker>())
                 .Where(b => b != null && !string.IsNullOrWhiteSpace(b.SystemId))
                 .Select(b => new
@@ -66,7 +78,23 @@ internal static class MapTabRenderer
                     label = b.Label,
                     systemId = b.SystemId.Trim(),
                     color = b.ColorHex,
-                    isActive = b.IsActive
+                    isActive = string.Equals(b.BotId, activeBotId, StringComparison.Ordinal)
+                }),
+            botRoutes = (botRoutes ?? Array.Empty<BotRouteOverlay>())
+                .Where(r => r != null &&
+                            !string.IsNullOrWhiteSpace(r.BotId) &&
+                            !string.IsNullOrWhiteSpace(r.CurrentSystemId) &&
+                            r.Hops != null &&
+                            r.Hops.Count > 0)
+                .Select(r => new
+                {
+                    botId = r.BotId,
+                    label = r.Label,
+                    color = r.ColorHex,
+                    isActive = string.Equals(r.BotId, activeBotId, StringComparison.Ordinal),
+                    currentSystemId = r.CurrentSystemId,
+                    targetSystemId = r.TargetSystemId,
+                    hops = r.Hops
                 })
         });
 
