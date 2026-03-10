@@ -307,6 +307,9 @@ public sealed class RuntimeHost : IRuntimeHost
                                 _ => _agent.ExecuteAsync(_transport, result, currentState),
                                 token);
                             scriptStepFailureCounts.Remove(stepKey);
+                            // Publish immediately after execution so the active route (if any)
+                            // is visible before the post-action state refresh moves the ship.
+                            _publishSnapshot(currentState);
                         }
                         catch (OperationCanceledException)
                         {
