@@ -131,3 +131,33 @@ public sealed record ShipyardUiModel(
     IReadOnlyList<ShipyardUiEntry> Showroom,
     IReadOnlyList<ShipyardUiEntry> PlayerListings,
     IReadOnlyList<ShipyardUiEntry> CatalogShips);
+
+public sealed record BotStateEntry(
+    string BotId,
+    SpaceUiModel? SpaceModel,
+    IReadOnlyList<string> SpaceConnectedSystems,
+    TradeUiModel? TradeModel,
+    ShipyardUiModel? ShipyardModel,
+    CatalogUiModel? CatalogModel,
+    IReadOnlyList<MissionPromptOption> ActiveMissionPrompts,
+    IReadOnlyList<MissionPromptOption> AvailableMissionPrompts,
+    IReadOnlyList<string> Memory,
+    IReadOnlyList<string> ExecutionStatusLines,
+    string? ControlInput,
+    int? CurrentScriptLine,
+    string? LastGenerationPrompt,
+    int? CurrentTick,
+    DateTime? LastSpaceMoltPostUtc,
+    Prayer.Contracts.ActiveGoRouteDto? ActiveRoute,
+    CraftingUiModel? CraftingModel);
+
+public sealed record BotRouteOverlay(
+    string BotId,
+    string Label,
+    string ColorHex,
+    string CurrentSystemId,
+    string? TargetSystemId,
+    IReadOnlyList<string> Hops,
+    int? TotalJumps,
+    int? EstimatedFuel,
+    int? FuelAvailable);

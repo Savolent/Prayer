@@ -6,116 +6,110 @@ using System.Threading.Channels;
 public sealed class UiSnapshotPublisher
 {
     private readonly ChannelWriter<UiSnapshot> _uiWriter;
-    private readonly Func<IReadOnlyList<BotTab>> _getBotTabs;
-    private readonly Func<string?> _getActiveBotId;
-    private readonly Func<BotSession?> _getActiveBot;
-    private readonly Func<string?, IReadOnlyList<string>> _getExecutionStatusLinesForBot;
+    private readonly Func<IReadOnlyList<BotSession>> _getAllBots;
+    private readonly Func<string?> _getDefaultBotId;
     private readonly Func<IReadOnlyList<BotMapMarker>> _getBotMapMarkers;
+    private readonly Func<IReadOnlyList<BotRouteOverlay>> _getBotRoutes;
     private readonly Action<string> _logAuth;
     private string _lastLoggedBotTabSignature = "";
 
     public UiSnapshotPublisher(
         ChannelWriter<UiSnapshot> uiWriter,
-        Func<IReadOnlyList<BotTab>> getBotTabs,
-        Func<string?> getActiveBotId,
-        Func<BotSession?> getActiveBot,
-        Func<string?, IReadOnlyList<string>> getExecutionStatusLinesForBot,
+        Func<IReadOnlyList<BotSession>> getAllBots,
+        Func<string?> getDefaultBotId,
         Func<IReadOnlyList<BotMapMarker>> getBotMapMarkers,
+        Func<IReadOnlyList<BotRouteOverlay>> getBotRoutes,
         Action<string> logAuth)
     {
         _uiWriter = uiWriter;
-        _getBotTabs = getBotTabs;
-        _getActiveBotId = getActiveBotId;
-        _getActiveBot = getActiveBot;
-        _getExecutionStatusLinesForBot = getExecutionStatusLinesForBot;
+        _getAllBots = getAllBots;
+        _getDefaultBotId = getDefaultBotId;
         _getBotMapMarkers = getBotMapMarkers;
+        _getBotRoutes = getBotRoutes;
         _logAuth = logAuth;
     }
 
-    public void LogBotTabsIfChanged(string context, IReadOnlyList<BotTab>? tabs = null, string? activeId = null)
+    public void LogBotTabsIfChanged(string context)
     {
-        var currentTabs = tabs ?? _getBotTabs();
-        var currentActiveId = activeId ?? _getActiveBotId();
-        var labels = string.Join(",", currentTabs.Select(t => t.Label));
-        var signature = $"{currentTabs.Count}|{currentActiveId}|{labels}";
+        var bots = _getAllBots();
+        var defaultBotId = _getDefaultBotId();
+        var labels = string.Join(",", bots.Select(b => b.Label));
+        var signature = $"{bots.Count}|{defaultBotId}|{labels}";
         if (signature == _lastLoggedBotTabSignature)
             return;
 
         _lastLoggedBotTabSignature = signature;
         _logAuth(
-            $"{context} | tabs_changed | count={currentTabs.Count} | active={currentActiveId ?? "(null)"} | labels=[{labels}]");
+            $"{context} | tabs_changed | count={bots.Count} | default={defaultBotId ?? "(null)"} | labels=[{labels}]");
     }
 
-    public void PublishNoBotSnapshot(string? message = null)
+    public void PublishSnapshot()
     {
-        var tabs = _getBotTabs();
-        var activeBotId = _getActiveBotId();
-        LogBotTabsIfChanged("publish_no_bot_snapshot", tabs, activeBotId);
-        _uiWriter.TryWrite(new UiSnapshot(
-            null,
-            Array.Empty<string>(),
-            null,
-            null,
-            null,
-            Array.Empty<MissionPromptOption>(),
-            Array.Empty<MissionPromptOption>(),
-            Array.Empty<string>(),
-            _getExecutionStatusLinesForBot(activeBotId),
-            null,
-            null,
-            null,
-            null,
-            null,
-            tabs,
-            _getBotMapMarkers(),
-            activeBotId,
-            null));
-    }
+        var sessions = _getAllBots();
+        var defaultBotId = _getDefaultBotId();
+        var tabs = sessions.Select(s => new BotTab(s.Id, s.Label, s.ColorHex)).ToList();
 
-    public void PublishActiveSnapshot(string? noStateMessage = null)
-    {
-        var active = _getActiveBot();
-        if (active == null)
+        var botStates = new Dictionary<string, BotStateEntry>(StringComparer.Ordinal);
+        foreach (var session in sessions)
         {
-            PublishNoBotSnapshot();
-            return;
+            var entry = BuildBotStateEntry(session);
+            botStates[session.Id] = entry;
         }
 
-        PublishNoBotSnapshot(noStateMessage ?? $"Bot '{active.Label}' loaded; initial state unavailable.");
-    }
+        LogBotTabsIfChanged("publish_snapshot");
 
-    public void PublishPrayerSnapshot(BotSession bot, AppPrayerRuntimeState snapshot)
-    {
-        if (snapshot.State == null)
-        {
-            PublishNoBotSnapshot($"Bot '{bot.Label}' loaded; initial state unavailable.");
-            return;
-        }
-
-        var tabs = _getBotTabs();
-        var activeBotId = _getActiveBotId();
-        var uiState = AppUiStateBuilder.BuildUiState(snapshot.State);
-        var missionPrompts = MissionPromptBuilder.BuildOptions(snapshot.State);
-        var availableMissionPrompts = MissionPromptBuilder.BuildAvailableOptions(snapshot.State);
-        LogBotTabsIfChanged("publish_prayer_snapshot", tabs, activeBotId);
         _uiWriter.TryWrite(new UiSnapshot(
-            uiState.SpaceModel,
-            snapshot.State.Systems ?? Array.Empty<string>(),
-            uiState.TradeModel,
-            uiState.ShipyardModel,
-            uiState.CatalogModel,
-            missionPrompts,
-            availableMissionPrompts,
-            snapshot.Memory,
-            snapshot.ExecutionStatusLines,
-            snapshot.ControlInput,
-            snapshot.CurrentScriptLine,
-            snapshot.LastGenerationPrompt,
-            snapshot.CurrentTick,
-            snapshot.LastSpaceMoltPostUtc,
+            botStates,
+            _getBotRoutes(),
             tabs,
             _getBotMapMarkers(),
-            activeBotId,
-            uiState.CraftingModel));
+            defaultBotId));
+    }
+
+    private static BotStateEntry BuildBotStateEntry(BotSession session)
+    {
+        var prayerState = session.LastPrayerState;
+        if (prayerState?.State == null)
+        {
+            return new BotStateEntry(
+                BotId: session.Id,
+                SpaceModel: null,
+                SpaceConnectedSystems: Array.Empty<string>(),
+                TradeModel: null,
+                ShipyardModel: null,
+                CatalogModel: null,
+                ActiveMissionPrompts: Array.Empty<MissionPromptOption>(),
+                AvailableMissionPrompts: Array.Empty<MissionPromptOption>(),
+                Memory: prayerState?.Memory ?? Array.Empty<string>(),
+                ExecutionStatusLines: prayerState?.ExecutionStatusLines ?? Array.Empty<string>(),
+                ControlInput: prayerState?.ControlInput,
+                CurrentScriptLine: prayerState?.CurrentScriptLine,
+                LastGenerationPrompt: prayerState?.LastGenerationPrompt,
+                CurrentTick: prayerState?.CurrentTick,
+                LastSpaceMoltPostUtc: prayerState?.LastSpaceMoltPostUtc,
+                ActiveRoute: prayerState?.ActiveRoute,
+                CraftingModel: null);
+        }
+
+        var uiState = AppUiStateBuilder.BuildUiState(prayerState.State);
+
+        return new BotStateEntry(
+            BotId: session.Id,
+            SpaceModel: uiState.SpaceModel,
+            SpaceConnectedSystems: prayerState.State.Systems ?? Array.Empty<string>(),
+            TradeModel: uiState.TradeModel,
+            ShipyardModel: uiState.ShipyardModel,
+            CatalogModel: uiState.CatalogModel,
+            ActiveMissionPrompts: MissionPromptBuilder.BuildOptions(prayerState.State),
+            AvailableMissionPrompts: MissionPromptBuilder.BuildAvailableOptions(prayerState.State),
+            Memory: prayerState.Memory,
+            ExecutionStatusLines: prayerState.ExecutionStatusLines,
+            ControlInput: prayerState.ControlInput,
+            CurrentScriptLine: prayerState.CurrentScriptLine,
+            LastGenerationPrompt: prayerState.LastGenerationPrompt,
+            CurrentTick: prayerState.CurrentTick,
+            LastSpaceMoltPostUtc: prayerState.LastSpaceMoltPostUtc,
+            ActiveRoute: prayerState.ActiveRoute,
+            CraftingModel: uiState.CraftingModel);
     }
 }

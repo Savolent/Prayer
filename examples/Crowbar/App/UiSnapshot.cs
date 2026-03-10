@@ -1,23 +1,9 @@
-using System;
 using System.Collections.Generic;
 
 public sealed record UiSnapshot(
-    SpaceUiModel? SpaceModel,
-    IReadOnlyList<string> SpaceConnectedSystems,
-    TradeUiModel? TradeModel,
-    ShipyardUiModel? ShipyardModel,
-    CatalogUiModel? CatalogModel,
-    IReadOnlyList<MissionPromptOption> ActiveMissionPrompts,
-    IReadOnlyList<MissionPromptOption> AvailableMissionPrompts,
-    IReadOnlyList<string> Memory,
-    IReadOnlyList<string> ExecutionStatusLines,
-    string? ControlInput,
-    int? CurrentScriptLine,
-    string? LastGenerationPrompt,
-    int? CurrentTick,
-    DateTime? LastSpaceMoltPostUtc,
+    IReadOnlyDictionary<string, BotStateEntry> BotStates,
+    IReadOnlyList<BotRouteOverlay> BotRoutes,
     IReadOnlyList<BotTab> Bots,
     IReadOnlyList<BotMapMarker> BotMapMarkers,
-    string? ActiveBotId,
-    CraftingUiModel? CraftingModel = null
+    string? DefaultBotId
 );

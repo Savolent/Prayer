@@ -1,5 +1,5 @@
 public sealed record BotTab(string Id, string Label, string ColorHex);
-public sealed record BotMapMarker(string BotId, string Label, string SystemId, string ColorHex, bool IsActive);
+public sealed record BotMapMarker(string BotId, string Label, string SystemId, string ColorHex);
 public sealed record MissionPromptOption(string MissionId, string Label, string Prompt, string IssuingPoiId);
 
 public enum AddBotMode
