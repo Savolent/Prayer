@@ -61,8 +61,22 @@ internal sealed class SpaceMoltGameStateAssembler
         POIInfo currentPOI;
         POIInfo[] pois;
 
-        if (SpaceMoltApiTransport.TryExtractApiError(systemResult, out var errorCode, out _, out _) &&
-            string.Equals(errorCode, "no_system", StringComparison.OrdinalIgnoreCase))
+        bool noSystemError =
+            SpaceMoltApiTransport.TryExtractApiError(systemResult, out var errorCode, out _, out _) &&
+            string.Equals(errorCode, "no_system", StringComparison.OrdinalIgnoreCase);
+        bool inTransitResponse = IsInTransitGetSystemPayload(systemResult);
+
+        if (string.IsNullOrWhiteSpace(currentSystem) && inTransitResponse)
+        {
+            // Some in-transit status payloads leave current_system empty.
+            // Keep the UI/runtime grounded to known system ids while jumping.
+            currentSystem =
+                TryGetString(systemResult, "from_system") ??
+                TryGetString(systemResult, "to_system") ??
+                currentSystem;
+        }
+
+        if (noSystemError || inTransitResponse)
         {
             // Character is mid-jump and has no current system context yet.
             // Use empty defaults so session creation succeeds; state will refresh on landing.
@@ -75,6 +89,9 @@ internal sealed class SpaceMoltGameStateAssembler
             SpaceMoltApiTransport.EnsureCommandSucceeded("get_system", systemResult);
             var systemObj = SpaceMoltApiTransport.RequireObjectProperty(systemResult, "system", "get_system");
             var connections = SpaceMoltApiTransport.RequireArrayProperty(systemObj, "connections", "get_system.system");
+
+            if (string.IsNullOrWhiteSpace(currentSystem))
+                currentSystem = TryGetString(systemObj, "id") ?? currentSystem;
 
             jumpTargets = connections
                 .EnumerateArray()
@@ -423,5 +440,14 @@ internal sealed class SpaceMoltGameStateAssembler
                (el.ValueKind == JsonValueKind.True || el.ValueKind == JsonValueKind.False)
             ? el.GetBoolean()
             : null;
+    }
+
+    private static bool IsInTransitGetSystemPayload(JsonElement payload)
+    {
+        if (payload.ValueKind != JsonValueKind.Object)
+            return false;
+
+        return payload.TryGetProperty("in_transit", out var inTransitEl) &&
+               inTransitEl.ValueKind == JsonValueKind.True;
     }
 }
