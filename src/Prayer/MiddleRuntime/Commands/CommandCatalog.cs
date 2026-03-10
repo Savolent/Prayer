@@ -32,5 +32,6 @@ public static class CommandCatalog
         new ListShipForSaleCommand(),
         new WaitCommand(),
         new CraftCommand(),
+        new SelfDestructCommand(),
     };
 }
