@@ -315,6 +315,30 @@ public sealed class RuntimeHost : IRuntimeHost
                             _publishSnapshot(currentState);
                             continue;
                         }
+                        catch (RuntimeTransportTimeoutException ex)
+                        {
+                            int failures = scriptStepFailureCounts.TryGetValue(stepKey, out var count)
+                                ? count + 1
+                                : 1;
+                            scriptStepFailureCounts[stepKey] = failures;
+
+                            if (failures < ScriptStepRetryLimit)
+                            {
+                                _agent.RequeueScriptStep(result);
+                                _publishStatus($"[{_label}] Command timed out (attempt {failures}/{ScriptStepRetryLimit}), retrying: {FormatCommand(result)}");
+                                _log($"bot_worker | {_label} | command_timeout_retry | attempt={failures} | command={FormatCommand(result)} | {ex.Message}");
+                            }
+                            else
+                            {
+                                scriptStepFailureCounts.Remove(stepKey);
+                                _publishStatus($"[{_label}] Command timed out after {ScriptStepRetryLimit} attempts, skipping: {FormatCommand(result)}");
+                                _log($"bot_worker | {_label} | command_timeout_skip | command={FormatCommand(result)} | {ex.Message}");
+                            }
+
+                            _publishSnapshot(currentState);
+                            await Task.Delay(200, token);
+                            continue;
+                        }
                         catch (Exception ex)
                         {
                             int failures = scriptStepFailureCounts.TryGetValue(stepKey, out var count)
@@ -646,6 +670,12 @@ public sealed class RuntimeHost : IRuntimeHost
         {
             using var _ = RuntimeOperationCancellationContext.Push(linkedCts.Token);
             return await action(linkedCts.Token);
+        }
+        catch (OperationCanceledException ex) when (!linkedCts.IsCancellationRequested && !runtimeToken.IsCancellationRequested)
+        {
+            // Not a halt — likely an HTTP client timeout. Wrap so the caller's retry
+            // logic handles it rather than misidentifying it as a halt cancellation.
+            throw new RuntimeTransportTimeoutException(ex.Message, ex);
         }
         finally
         {
