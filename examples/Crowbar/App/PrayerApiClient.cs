@@ -151,6 +151,22 @@ public sealed class PrayerApiClient
         return result;
     }
 
+    public async Task<Contracts.ActiveGoRouteDto?> GetActiveRouteAsync(
+        string sessionId,
+        CancellationToken cancellationToken = default)
+    {
+        var response = await _http.GetAsync(
+            $"api/runtime/sessions/{sessionId}/route",
+            cancellationToken);
+
+        if (response.StatusCode == System.Net.HttpStatusCode.NoContent)
+            return null;
+
+        await EnsureSuccessWithDetailsAsync(response);
+        return await response.Content.ReadFromJsonAsync<Contracts.ActiveGoRouteDto>(
+            cancellationToken: cancellationToken);
+    }
+
     public async Task DeleteSessionAsync(string sessionId)
     {
         var response = await _http.DeleteAsync($"api/runtime/sessions/{sessionId}");

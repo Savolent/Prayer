@@ -139,9 +139,8 @@ class Program
                 return botSessions.Values
                     .Select(session =>
                     {
-                        var runtimeState = session.LastPrayerState;
-                        var activeRoute = runtimeState?.ActiveRoute;
-                        var currentSystem = (runtimeState?.State?.System ?? string.Empty).Trim();
+                        var activeRoute = session.LastActiveRoute;
+                        var currentSystem = (session.LastPrayerState?.State?.System ?? string.Empty).Trim();
                         if (activeRoute == null || string.IsNullOrWhiteSpace(currentSystem))
                             return null;
 
@@ -205,6 +204,7 @@ class Program
             GetBotRoutes,
             LogAuth);
         var sessionPollers = new Dictionary<string, (CancellationTokenSource Cts, Task Task)>(StringComparer.Ordinal);
+        var routePollers = new Dictionary<string, (CancellationTokenSource Cts, Task Task)>(StringComparer.Ordinal);
 
         void StartSessionPoller(BotSession session)
         {
@@ -287,6 +287,63 @@ class Program
             }, linkedCts.Token);
 
             sessionPollers[session.Id] = (linkedCts, pollTask);
+        }
+
+        void StartRoutePoller(BotSession session)
+        {
+            if (string.IsNullOrWhiteSpace(session.PrayerSessionId))
+                return;
+
+            if (routePollers.ContainsKey(session.Id))
+                return;
+
+            var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cts.Token);
+            var pollTask = Task.Run(async () =>
+            {
+                string prayerSessionId;
+                lock (botLock)
+                    prayerSessionId = session.PrayerSessionId ?? "";
+
+                while (!linkedCts.Token.IsCancellationRequested)
+                {
+                    try
+                    {
+                        if (string.IsNullOrWhiteSpace(prayerSessionId))
+                            break;
+
+                        var route = await prayerApi.GetActiveRouteAsync(prayerSessionId, linkedCts.Token);
+
+                        bool changed;
+                        lock (botLock)
+                        {
+                            if (!botSessions.TryGetValue(session.Id, out var current))
+                                break;
+
+                            var prev = current.LastActiveRoute;
+                            changed = prev?.Target != route?.Target ||
+                                      (prev?.Hops?.Count ?? 0) != (route?.Hops?.Count ?? 0);
+                            if (changed)
+                                current.LastActiveRoute = route;
+                        }
+
+                        if (changed)
+                            snapshotPublisher.PublishSnapshot();
+
+                        await Task.Delay(500, linkedCts.Token);
+                    }
+                    catch (OperationCanceledException) when (linkedCts.Token.IsCancellationRequested)
+                    {
+                        break;
+                    }
+                    catch
+                    {
+                        try { await Task.Delay(500, linkedCts.Token); }
+                        catch (OperationCanceledException) { break; }
+                    }
+                }
+            }, linkedCts.Token);
+
+            routePollers[session.Id] = (linkedCts, pollTask);
         }
 
         async Task<(BotSession Session, string Password)> CreateBotSessionAsync(
@@ -398,6 +455,7 @@ class Program
                             defaultBotId = session.Id;
                     }
                     StartSessionPoller(session);
+                    StartRoutePoller(session);
                     snapshotPublisher.LogBotTabsIfChanged("startup_autologin_added");
                 }
                 catch (Exception ex)
@@ -484,6 +542,7 @@ class Program
                                     defaultBotId = session.Id;
                             }
                             StartSessionPoller(session);
+                            StartRoutePoller(session);
                             snapshotPublisher.LogBotTabsIfChanged("manual_add_added");
                             try
                             {
@@ -677,7 +736,10 @@ class Program
 
         cts.Cancel();
         var pollerHandles = sessionPollers.Values.ToList();
+        var routePollerHandles = routePollers.Values.ToList();
         foreach (var (pollerCts, _) in pollerHandles)
+            pollerCts.Cancel();
+        foreach (var (pollerCts, _) in routePollerHandles)
             pollerCts.Cancel();
         channels.UiSnapshots.Writer.TryComplete();
 
@@ -705,7 +767,8 @@ class Program
         await Task.WhenAll(
             botTask.ContinueWith(_ => { }),
             uiRenderTask.ContinueWith(_ => { }),
-            Task.WhenAll(pollerHandles.Select(p => p.Task.ContinueWith(_ => { })))
+            Task.WhenAll(pollerHandles.Select(p => p.Task.ContinueWith(_ => { }))),
+            Task.WhenAll(routePollerHandles.Select(p => p.Task.ContinueWith(_ => { })))
         );
 
         await sink.DrainAndStopAsync();

@@ -19,4 +19,5 @@ public sealed class BotSession
     public List<string> ExecutionStatusLines { get; } = new();
     public AppPrayerRuntimeState? LastPrayerState { get; set; }
     public long PrayerStateVersion { get; set; }
+    public Prayer.Contracts.ActiveGoRouteDto? LastActiveRoute { get; set; }
 }

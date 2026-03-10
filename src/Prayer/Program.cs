@@ -210,6 +210,24 @@ app.MapGet("/api/runtime/sessions/{id}/status", (string id, RuntimeSessionStore 
     return Results.Ok(session.GetStatusLines());
 });
 
+app.MapGet("/api/runtime/sessions/{id}/route", (string id, RuntimeSessionStore store) =>
+{
+    if (!store.TryGet(id, out var session))
+        return Results.NotFound();
+
+    var route = session.Agent.ActiveRoute;
+    if (route == null)
+        return Results.NoContent();
+
+    return Results.Ok(new Contracts.ActiveGoRouteDto(
+        route.Target,
+        route.Hops,
+        route.TotalJumps,
+        route.FuelPerJump,
+        route.EstimatedFuel,
+        route.FuelAvailable));
+});
+
 app.MapGet("/api/runtime/sessions/{id}/spacemolt/stats", (string id, RuntimeSessionStore store) =>
 {
     if (!store.TryGet(id, out var session))
