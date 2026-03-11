@@ -50,6 +50,8 @@ public static class AppPaths
         PlannerPromptLogFile,
         PathfindLogFile,
         SpaceMoltApiLogFile,
+        SpaceMoltApiStatsLogFile,
+        ItemCatalogLogFile,
         CommandExecutionLogFile,
         ScriptNormalizationLogFile,
         ScriptWriterContextLogFile,
